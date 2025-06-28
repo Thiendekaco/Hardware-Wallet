@@ -107,18 +107,18 @@ void app_main(void) {
     ESP_LOGI(TAG, "=== RUN TASK START ===");
     show_splash_screen(&dev, splashTasks, sizeof(splashTasks)/sizeof(splashTasks[0]));
 
-    //
-    // // 3. Start the PIN input workflow. This will handle showing the
-    // //    PIN entry UI, reading buttons, saving/verifying PIN in NVS.
-    // bool result = handle_password_flow(&dev);
-    // if (result) {
-    //     ESP_LOGI(TAG, "Password flow completed successfully");
-    // } else {
-    //     ESP_LOGW(TAG, "Password flow returned false (unexpected)");
-    // }
-    //
-    // // 4. Enter an infinite loop. Replace this with additional logic if needed.
-    // while (1) {
-    //     vTaskDelay(pdMS_TO_TICKS(1000));
-    // }
+
+    // 3. Start the PIN input workflow. This will handle showing the
+    //    PIN entry UI, reading buttons, saving/verifying PIN in NVS.
+    bool result = handle_password_flow(&dev);
+    if (result) {
+        ESP_LOGI(TAG, "Password flow completed successfully");
+    } else {
+        ESP_LOGW(TAG, "Password flow returned false (unexpected)");
+    }
+
+    // 4. Enter an infinite loop. Replace this with additional logic if needed.
+    while (1) {
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
 }

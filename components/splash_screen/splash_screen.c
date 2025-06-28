@@ -21,27 +21,17 @@ static const uint8_t ethereum_logo[] = {
     0x00, 0x00, 0x00, 0x00
 };
 
-static const char *TAG = "SplashScreen";
-
 void draw_splash_progress(SSD1306_t *dev, int progress_percent) {
-    ESP_LOGI(TAG, "Entering show_splash_screen %d", progress_percent);
     ssd1306_clear_screen(dev, false);
-    ESP_LOGI(TAG, "Clear screen show_splash_screen %d", progress_percent);
-
-    // Kiểm tra dev->buffer
-    if (dev == NULL) {
-        ESP_LOGE(TAG, "draw_splash_progress: dev is NULL");
-        return;
-    }
 
     int centerX = (ssd1306_get_width(dev) - 32) / 2;
-    int centerY = (ssd1306_get_height(dev) - 48) / 2;
+    int totalHeight = 49 + 5 + 5;  // logo + space + progress bar
+    int startY = (ssd1306_get_height(dev) - totalHeight) / 2;
 
     // Draw logo
-    ssd1306_bitmaps(dev, centerX, centerY, ethereum_logo, 32, 49, false);
-    ESP_LOGI(TAG, "Draw bitmap");
+    ssd1306_bitmaps(dev, centerX, startY, ethereum_logo, 32, 49, false);
     // Draw progress bar
-    int barY = centerY + 49 + 5;
+    int barY = startY + 49 + 5;
     int barWidth = 128;
     int fillWidth = (barWidth * progress_percent) / 100;
 
@@ -57,22 +47,15 @@ void draw_splash_progress(SSD1306_t *dev, int progress_percent) {
             _ssd1306_pixel(dev, x, barY + y, true);
         }
     }
-
-    ESP_LOGI(TAG, "dev->_address = 0x%02X", dev->_address);
-    ESP_LOGI(TAG, "SHOW BUFFER");
     ssd1306_show_buffer(dev);
-    ESP_LOGI(TAG, "END SHOW BUFFER");
 }
 
 void show_splash_screen(SSD1306_t *dev, InitTask tasks[], int task_count) {
-    ESP_LOGI(TAG, "Entering show_splash_screen ");
     draw_splash_progress(dev, 0);
     vTaskDelay(pdMS_TO_TICKS(500));
 
     for (int i = 0; i < task_count; ++i) {
-        ESP_LOGI(TAG, "Entering task %d", i);
         tasks[i]();
-        ESP_LOGI(TAG, "End task %d", i);
         int progress = ((i + 1) * 100) / task_count;
         draw_splash_progress(dev, progress);
         vTaskDelay(pdMS_TO_TICKS(200));
