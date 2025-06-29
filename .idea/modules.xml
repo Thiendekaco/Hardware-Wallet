@@ -3,6 +3,7 @@
   <component name="ProjectModuleManager">
     <modules>
       <module fileurl="file://$PROJECT_DIR$/.idea/Hardware-Wallet.iml" filepath="$PROJECT_DIR$/.idea/Hardware-Wallet.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/harware-wallet.iml" filepath="$PROJECT_DIR$/.idea/harware-wallet.iml" />
     </modules>
   </component>
 </project>

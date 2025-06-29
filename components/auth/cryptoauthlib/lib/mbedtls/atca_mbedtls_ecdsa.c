@@ -42,7 +42,7 @@
 #endif /* !(MBEDTLS_VERSION_NUMBER < 0x03000000) */
 
 #if !defined(MBEDTLS_CONFIG_FILE)
-#include "mbedtls/config.h"
+#include "mbedtls/esp_config.h"
 #else
 #include MBEDTLS_CONFIG_FILE
 #endif
