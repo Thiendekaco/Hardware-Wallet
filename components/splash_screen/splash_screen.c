@@ -1,8 +1,6 @@
 #include "splash_screen.h"
-#include "ssd1306.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "esp_log.h"
 
 
 static const uint8_t ethereum_logo[] = {
@@ -21,43 +19,41 @@ static const uint8_t ethereum_logo[] = {
     0x00, 0x00, 0x00, 0x00
 };
 
-void draw_splash_progress(SSD1306_t *dev, int progress_percent) {
-    ssd1306_clear_screen(dev, false);
+/**
+ * @brief Draw the Ethereum logo and a progress bar using U8g2.
+ */
+void draw_splash_progress(u8g2_t *u8g2, int progress_percent) {
+    u8g2_ClearBuffer(u8g2);
 
-    int centerX = (ssd1306_get_width(dev) - 32) / 2;
-    int totalHeight = 49 + 5 + 5;  // logo + space + progress bar
-    int startY = (ssd1306_get_height(dev) - totalHeight) / 2;
+    int centerX = (u8g2_GetDisplayWidth(u8g2) - 32) / 2;
+    int totalHeight = 49 + 5 + 6;
+    int startY = (u8g2_GetDisplayHeight(u8g2) - totalHeight) / 2;
 
     // Draw logo
-    ssd1306_bitmaps(dev, centerX, startY, ethereum_logo, 32, 49, false);
+    u8g2_DrawXBMP(u8g2, centerX, startY, 32, 49, ethereum_logo);
+
     // Draw progress bar
     int barY = startY + 49 + 5;
-    int barWidth = 128;
-    int fillWidth = (barWidth * progress_percent) / 100;
+    int barWidth = u8g2_GetDisplayWidth(u8g2);
+    int barHeight = 6;
 
-    // Draw empty progress bar
-    for (int x = 0; x < barWidth; x++) {
-        _ssd1306_pixel(dev, x, barY, true);
-        _ssd1306_pixel(dev, x, barY + 5, true);
-    }
+    u8g2_DrawFrame(u8g2, 0, barY, barWidth, barHeight);
+    u8g2_DrawBox(u8g2, 1, barY + 1, (barWidth - 2) * progress_percent / 100, barHeight - 2);
 
-    // Draw filled portion
-    for (int x = 0; x < fillWidth; x++) {
-        for (int y = 1; y < 5; y++) {
-            _ssd1306_pixel(dev, x, barY + y, true);
-        }
-    }
-    ssd1306_show_buffer(dev);
+    u8g2_SendBuffer(u8g2);
 }
 
-void show_splash_screen(SSD1306_t *dev, InitTask tasks[], int task_count) {
-    draw_splash_progress(dev, 0);
+/**
+ * @brief Show splash screen and sequentially run init tasks.
+ */
+void show_splash_screen(u8g2_t *u8g2, InitTask tasks[], int task_count) {
+    draw_splash_progress(u8g2, 0);
     vTaskDelay(pdMS_TO_TICKS(500));
 
     for (int i = 0; i < task_count; ++i) {
         tasks[i]();
         int progress = ((i + 1) * 100) / task_count;
-        draw_splash_progress(dev, progress);
+        draw_splash_progress(u8g2, progress);
         vTaskDelay(pdMS_TO_TICKS(200));
     }
 

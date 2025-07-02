@@ -3,27 +3,28 @@
 #ifndef PASSWORD_H
 #define PASSWORD_H
 
-#include "ssd1306.h"
+#include <stdbool.h>
+#include "u8g2.h"
 
-// Initialize the PIN selection interface
-void init_password(SSD1306_t *dev);
+// Extern display instance (defined in main.c)
+extern u8g2_t u8g2;
 
-// Update the UI when a user selects a digit
-void update_password(SSD1306_t *dev, int selectedIndex, int pinIndex, int pinCode[4]);
+// Display updated password UI
+void update_password(int selectedIndex, int pinIndex, int pinCode[4]);
 
-// Display confirmation message when the correct PIN is entered
-void show_password_confirmed(SSD1306_t *dev);
+// Show PIN OK confirmation
+void show_password_confirmed();
 
 // Save the PIN to NVS
 void save_pin_to_nvs(const int pinCode[4]);
 
-// Check if a PIN is already stored
+// Check if a PIN exists in NVS
 bool is_password_set();
 
-// Verify if the entered PIN matches the stored PIN
+// Verify the entered PIN
 bool verify_pin(const int pinCode[4]);
 
-// Handle the complete PIN input flow
-bool handle_password_flow(SSD1306_t *dev);
+// Full PIN input flow
+bool handle_password_flow();
 
 #endif

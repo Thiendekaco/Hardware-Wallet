@@ -1,9 +1,9 @@
 #include "button_listener.h"
 
 // Khai báo chân GPIO theo ESP-IDF
-const gpio_num_t BUTTON_LEFT = GPIO_NUM_18;
-const gpio_num_t BUTTON_RIGHT = GPIO_NUM_19;
-const gpio_num_t BUTTON_MIDDLE = GPIO_NUM_17;
+const gpio_num_t BUTTON_LEFT = GPIO_NUM_17;
+const gpio_num_t BUTTON_RIGHT = GPIO_NUM_4;
+const gpio_num_t BUTTON_MIDDLE = GPIO_NUM_16;
 
 void init_button_listener() {
     // Cấu hình chân GPIO làm input với pull-up nội bộ

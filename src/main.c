@@ -1,26 +1,33 @@
-// main.c
-
+#include <stdio.h>
+#include "driver/gpio.h"
+#include "driver/i2c_master.h" 
+#include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "esp_system.h"
+#include "u8g2.h"
 #include "esp_log.h"
 #include "esp_err.h"
 
 #include "nvs_flash.h"
-#include "ssd1306.h"
 #include "button_listener.h"
 #include "password.h"
 #include "splash_screen.h"
-#include <string.h>
 #include "driver/i2c.h"
+
+#define I2C_MASTER_SCL_IO           GPIO_NUM_22      // GPIO number for I2C master clock
+#define I2C_MASTER_SDA_IO           GPIO_NUM_21      // GPIO number for I2C master data
+#define I2C_MASTER_NUM              I2C_NUM_0 // I2C port number for master dev
+#define I2C_MASTER_FREQ_HZ          400000   // I2C master clock frequency
+#define I2C_MASTER_TX_BUF_DISABLE   0        // I2C master doesn't need buffer
+#define I2C_MASTER_RX_BUF_DISABLE   0        // I2C master doesn't need buffer
 
 static const char *TAG = "main";
 
-// I2C pin definitions (change these if using different pins)
-#define I2C_MASTER_SDA_IO    21
-#define I2C_MASTER_SCL_IO    22
-#define I2C_MASTER_FREQ_HZ   100000
-#define I2C_MASTER_PORT      I2C_NUM_0
-#define OLED_RESET_IO        -1    // If your module has no RESET pin, set to -1
+i2c_master_bus_handle_t i2c_bus = NULL;
+i2c_master_dev_handle_t i2c_dev = NULL;
+
+u8g2_t u8g2; // a structure which will contain all the data for one display
 
 
 // ------------------------------------------------------------------
@@ -80,44 +87,118 @@ static void task_initButtons(void)
 //   4. Start the PIN input flow.
 //   5. Enter an infinite loop (or perform other logic).
 // ------------------------------------------------------------------
-void app_main(void) {
-    ESP_LOGI(TAG, "=== APPLICATION START ===");
 
-    SSD1306_t dev;
-    // 1. Init core project
-    ESP_LOGI(TAG, "=== APPLICATION START ===");
+esp_err_t i2c_master_init(void)
+{
+    i2c_master_bus_config_t i2c_bus_config = {
+        .i2c_port = -1,
+        .sda_io_num = I2C_MASTER_SDA_IO,
+        .scl_io_num = I2C_MASTER_SCL_IO,
+        .clk_source = I2C_CLK_SRC_DEFAULT,
+        .glitch_ignore_cnt = 7,
+        .intr_priority = 1,
+        .flags = {
+            .enable_internal_pullup = true
+        }
+    };
+    esp_err_t err = i2c_new_master_bus(&i2c_bus_config, &i2c_bus);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "I2C bus initialization failed");
+    }
 
-    // 1) Thiết lập I2C trước
-    i2c_master_init(&dev, I2C_MASTER_SDA_IO, I2C_MASTER_SCL_IO, OLED_RESET_IO);
-    ESP_LOGI(TAG, "=== I2C MASTER INIT ===");
+    i2c_device_config_t i2c_dev_config = {
+        .dev_addr_length = I2C_ADDR_BIT_LEN_7,
+        .device_address = 0x3C,
+        .scl_speed_hz = I2C_MASTER_FREQ_HZ,
+        .scl_wait_us = 1000,
+        .flags = {
+            .disable_ack_check = false
+        }
+    };
 
-    // 2) Nếu thư viện của bạn có hàm “i2c_device_add” để thêm địa chỉ 0x3C trước khi init SSD1306
-    i2c_device_add(&dev, I2C_MASTER_PORT, OLED_RESET_IO, 0x3C);
-    ESP_LOGI(TAG, "=== I2C ADD DEVICE INIT ===");
+    i2c_master_bus_add_device(i2c_bus, &i2c_dev_config, &i2c_dev);
+    return err;
+}
 
-    // 3) Khởi tạo SSD1306: cấp phát buffer, lưu width/height, gắn bus I2C
-    ssd1306_init(&dev, 128, 64);
-    ESP_LOGI(TAG, "=== SSD1306 INIT ===");
+// GPIO and delay function for u8g2
+uint8_t u8x8_gpio_and_delay_esp32(u8x8_t *u8x8, uint8_t msg, uint8_t arg_int, void *arg_ptr) {
+    switch (msg) {
+        case U8X8_MSG_GPIO_AND_DELAY_INIT:
+            break;
+        case U8X8_MSG_DELAY_MILLI:
+            vTaskDelay(pdMS_TO_TICKS(arg_int));
+            break;
+        case U8X8_MSG_DELAY_10MICRO:
+            vTaskDelay(pdMS_TO_TICKS(0.01 * arg_int));
+            break;
+        case U8X8_MSG_DELAY_100NANO:
+            vTaskDelay(pdMS_TO_TICKS(0.0001));
+            break;
+        default:
+            return 0;
+    }
+    return 1;
+}
 
-    // 4) (Có thể) cần gọi thêm một hàm như i2c_init(&dev) để thiết lập page/buffer nội bộ
-    i2c_init(&dev, 128, 64);
-    ESP_LOGI(TAG, "=== I2C INIT ===");
 
-    // 5) Bây giờ buffer chắc chắn đã sẵn, bus I2C đã sẵn, gọi show_splash_screen
+uint8_t u8x8_byte_esp32_i2c(u8x8_t *u8x8, uint8_t msg, uint8_t arg_int, void *arg_ptr) {
+       static uint8_t buffer[32];  // static buffer
+       static uint8_t buf_idx;
+       uint8_t *data;
+
+       switch (msg) {
+           case U8X8_MSG_BYTE_SEND:
+               data = (uint8_t *)arg_ptr;
+               while (arg_int > 0) {
+                   buffer[buf_idx++] = *data;
+                   data++;
+                   arg_int--;
+               }
+               break;
+           case U8X8_MSG_BYTE_INIT:
+               // Already initialized in i2c_master_init()
+               break;
+           case U8X8_MSG_BYTE_SET_DC:
+               // DC (Data/Command) bit is set as part of the I2C data
+               break;
+           case U8X8_MSG_BYTE_START_TRANSFER:
+               buf_idx = 0;
+               break;
+           case U8X8_MSG_BYTE_END_TRANSFER:
+               i2c_master_transmit(i2c_dev, buffer, buf_idx, 1000 / portTICK_PERIOD_MS);
+               break;
+           default:
+               return 0;
+               break;
+       }
+       return 1;
+   }
+   
+
+void u8g2_display_init(u8g2_t *pu8g2) {
+    u8g2_Setup_ssd1306_i2c_128x32_univision_f(pu8g2, U8G2_R0, u8x8_byte_esp32_i2c, u8x8_gpio_and_delay_esp32);
+    u8g2_InitDisplay(pu8g2);
+    vTaskDelay(pdMS_TO_TICKS(100));  // Add a 100ms delay
+    u8g2_SetPowerSave(pu8g2, 0);  // Wake up display
+    u8g2_ClearBuffer(pu8g2);      // Clear the internal buffer
+}
+
+
+void app_main(void)
+{
+    ESP_ERROR_CHECK(i2c_master_init());
+
+    u8g2_display_init(&u8g2);
     ESP_LOGI(TAG, "=== RUN TASK START ===");
-    show_splash_screen(&dev, splashTasks, sizeof(splashTasks)/sizeof(splashTasks[0]));
+    show_splash_screen(&u8g2, splashTasks, sizeof(splashTasks)/sizeof(splashTasks[0]));
 
-
-    // 3. Start the PIN input workflow. This will handle showing the
-    //    PIN entry UI, reading buttons, saving/verifying PIN in NVS.
-    bool result = handle_password_flow(&dev);
+    bool result = handle_password_flow(&u8g2);
     if (result) {
         ESP_LOGI(TAG, "Password flow completed successfully");
     } else {
         ESP_LOGW(TAG, "Password flow returned false (unexpected)");
     }
 
-    // 4. Enter an infinite loop. Replace this with additional logic if needed.
     while (1) {
         vTaskDelay(pdMS_TO_TICKS(1000));
     }
