@@ -49,7 +49,9 @@ static InitTask splashTasks[] = {
 //   Clears the SSD1306 buffer. Additional splash graphics could be
 //   drawn here before the display is updated.
 // ------------------------------------------------------------------
-static void task_displaySetup(void){}
+static void task_displaySetup(void) {
+    vTaskDelay(pdMS_TO_TICKS(5000));
+}
 
 // ------------------------------------------------------------------
 // task_nvsInit:

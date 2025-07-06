@@ -12,35 +12,49 @@
 
 extern u8g2_t u8g2;
 
+void draw_star_pixel(int x, int y) {
+    u8g2_DrawPixel(&u8g2, x, y);         // center
+    u8g2_DrawPixel(&u8g2, x - 1, y);     // left
+    u8g2_DrawPixel(&u8g2, x + 1, y);     // right
+    u8g2_DrawPixel(&u8g2, x, y - 1);     // top
+    u8g2_DrawPixel(&u8g2, x, y + 1);     // bottom
+}
+
+void draw_pin_stars(int pinIndex) {
+    int start_x = 20;
+    int y = 28;
+    for (int i = 0; i < pinIndex; i++) {
+        draw_star_pixel(start_x + i * 8, y);  // 8px spacing
+    }
+}
+
+
 void update_password(int selectedIndex, int pinIndex, int pinCode[4]) {
     u8g2_ClearBuffer(&u8g2);
-    u8g2_SetFont(&u8g2, u8g2_font_6x10_tf);
+    u8g2_SetFont(&u8g2, u8g2_font_profont10_tf);
 
     // Title
-    u8g2_DrawStr(&u8g2, 30, 15, "Choose PIN");
+    u8g2_DrawStr(&u8g2, 40, 8, "Choose Pin");
 
-    // Digits + delete
-    const char *digits = "0123456789x";
-    u8g2_DrawStr(&u8g2, 0, 35, digits);
+    u8g2_SetFont(&u8g2, u8g2_font_micro_mr);
+    // Digit row with spacing
+    const char *digits = "0 1 2 3 4 5 6 7 8 9 <";
+    u8g2_DrawStr(&u8g2, 20, 20, digits);
 
-    // Caret
-    int caret_x = selectedIndex * 6;  // Based on font width
-    u8g2_DrawStr(&u8g2, caret_x, 45, "_");
+    // Caret under selected digit
+    int caret_x = (selectedIndex * 8) + 20;
+    u8g2_DrawStr(&u8g2, caret_x, 25, "-");
 
-    // PIN display as stars
-    char stars[PIN_LENGTH + 1] = {0};
-    for (int i = 0; i < pinIndex; i++) {
-        stars[i] = '*';
-    }
-    u8g2_DrawStr(&u8g2, 50, 62, stars);
+    // PIN display as spaced stars
+    draw_pin_stars(pinIndex);
 
     u8g2_SendBuffer(&u8g2);
 }
 
 void show_password_confirmed() {
     u8g2_ClearBuffer(&u8g2);
-    u8g2_SetFont(&u8g2, u8g2_font_6x10_tf);
-    u8g2_DrawStr(&u8g2, 40, 32, "PIN OK!");
+    u8g2_SetFont(&u8g2, u8g2_font_profont10_tf);
+    u8g2_DrawStr(&u8g2, 45, 32, "PIN OK!");
     u8g2_SendBuffer(&u8g2);
     vTaskDelay(pdMS_TO_TICKS(1500));
 }
@@ -126,7 +140,8 @@ bool handle_password_flow() {
                             return true;
                         } else {
                             u8g2_ClearBuffer(&u8g2);
-                            u8g2_DrawStr(&u8g2, 30, 32, "Wrong PIN!");
+                            u8g2_SetFont(&u8g2, u8g2_font_profont10_tf);
+                            u8g2_DrawStr(&u8g2, 35, 32, "Wrong PIN!");
                             u8g2_SendBuffer(&u8g2);
                             vTaskDelay(pdMS_TO_TICKS(2000));
                             pinIndex = 0;
