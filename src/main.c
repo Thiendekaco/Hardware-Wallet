@@ -12,6 +12,7 @@
 #include "nvs_flash.h"
 #include "button_listener.h"
 #include "password.h"
+#include "mnemonic.h"
 #include "splash_screen.h"
 #include "driver/i2c.h"
 
@@ -194,12 +195,9 @@ void app_main(void)
     ESP_LOGI(TAG, "=== RUN TASK START ===");
     show_splash_screen(&u8g2, splashTasks, sizeof(splashTasks)/sizeof(splashTasks[0]));
 
-    bool result = handle_password_flow(&u8g2);
-    if (result) {
-        ESP_LOGI(TAG, "Password flow completed successfully");
-    } else {
-        ESP_LOGW(TAG, "Password flow returned false (unexpected)");
-    }
+    // bool isNewPassword = !is_password_set();
+    // handle_password_flow(&u8g2);
+    handle_mnemonic_flow();
 
     while (1) {
         vTaskDelay(pdMS_TO_TICKS(1000));

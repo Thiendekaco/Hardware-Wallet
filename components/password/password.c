@@ -104,49 +104,116 @@ bool handle_password_flow() {
     int pinCode[PIN_LENGTH] = {0};
     int pinIndex = 0;
 
+    int confirmPin[PIN_LENGTH] = {0};
+    int confirmPinIndex = 0;
+
+    bool need_confirm = false;    // Flag for confirming new PIN
+
     update_password(selectedIndex, pinIndex, pinCode);
+
+    // Check if password is already set in NVS
+    bool password_set = is_password_set();
 
     while (true) {
         if (is_button_left_pressed()) {
             vTaskDelay(pdMS_TO_TICKS(200));
             selectedIndex = (selectedIndex - 1 + 11) % 11;
-            update_password(selectedIndex, pinIndex, pinCode);
+            update_password(selectedIndex, need_confirm ? confirmPinIndex : pinIndex, need_confirm ? confirmPin : pinCode);
         }
         else if (is_button_right_pressed()) {
             vTaskDelay(pdMS_TO_TICKS(200));
             selectedIndex = (selectedIndex + 1) % 11;
-            update_password(selectedIndex, pinIndex, pinCode);
+            update_password(selectedIndex, need_confirm ? confirmPinIndex : pinIndex, need_confirm ? confirmPin : pinCode);
         }
         else if (is_button_middle_pressed()) {
             vTaskDelay(pdMS_TO_TICKS(300));
 
+            // Handle backspace
             if (selectedIndex == 10) {
-                if (pinIndex > 0) {
-                    pinIndex--;
-                    update_password(selectedIndex, pinIndex, pinCode);
+                if (need_confirm) {
+                    if (confirmPinIndex > 0) confirmPinIndex--;
+                } else {
+                    if (pinIndex > 0) pinIndex--;
                 }
-            } else if (pinIndex < PIN_LENGTH) {
-                pinCode[pinIndex++] = selectedIndex;
-                update_password(selectedIndex, pinIndex, pinCode);
-
-                if (pinIndex == PIN_LENGTH) {
-                    if (!is_password_set()) {
-                        save_pin_to_nvs(pinCode);
-                        show_password_confirmed();
-                        return true;
-                    } else {
-                        if (verify_pin(pinCode)) {
-                            show_password_confirmed();
-                            return true;
-                        } else {
-                            u8g2_ClearBuffer(&u8g2);
-                            u8g2_SetFont(&u8g2, u8g2_font_profont10_tf);
-                            u8g2_DrawStr(&u8g2, 35, 32, "Wrong PIN!");
-                            u8g2_SendBuffer(&u8g2);
-                            vTaskDelay(pdMS_TO_TICKS(2000));
-                            pinIndex = 0;
-                            selectedIndex = 0;
+            }
+            // Handle digit input
+            else {
+                if (!password_set) {
+                    // -------- New PIN setting flow --------
+                    if (!need_confirm) {
+                        if (pinIndex < PIN_LENGTH) {
+                            pinCode[pinIndex++] = selectedIndex;
                             update_password(selectedIndex, pinIndex, pinCode);
+
+                            if (pinIndex == PIN_LENGTH) {
+                                // First entry done, ask for confirmation
+                                need_confirm = true;
+                                confirmPinIndex = 0;
+                                memset(confirmPin, 0, sizeof(confirmPin));
+
+                                // Show confirm prompt
+                                u8g2_ClearBuffer(&u8g2);
+                                u8g2_SetFont(&u8g2, u8g2_font_profont10_tf);
+                                u8g2_DrawStr(&u8g2, 14, 32, "Confirm PIN again");
+                                u8g2_SendBuffer(&u8g2);
+                                vTaskDelay(pdMS_TO_TICKS(1200));
+                                update_password(selectedIndex, confirmPinIndex, confirmPin);
+                            }
+                        }
+                    } else {
+                        // -------- Confirm new PIN flow --------
+                        if (confirmPinIndex < PIN_LENGTH) {
+                            confirmPin[confirmPinIndex++] = selectedIndex;
+                            update_password(selectedIndex, confirmPinIndex, confirmPin);
+
+                            if (confirmPinIndex == PIN_LENGTH) {
+                                // Compare PINs
+                                if (memcmp(pinCode, confirmPin, sizeof(pinCode)) == 0) {
+                                    // PIN confirmed, save to NVS
+                                    save_pin_to_nvs(pinCode);
+                                    show_password_confirmed();
+                                    return true;
+                                } else {
+                                    // PINs do not match, show error and restart
+                                    u8g2_ClearBuffer(&u8g2);
+                                    u8g2_SetFont(&u8g2, u8g2_font_profont10_tf);
+                                    u8g2_DrawStr(&u8g2, 10, 32, "PIN not match!");
+                                    u8g2_SendBuffer(&u8g2);
+                                    vTaskDelay(pdMS_TO_TICKS(2000));
+
+                                    // Reset state to enter PIN again
+                                    pinIndex = 0;
+                                    confirmPinIndex = 0;
+                                    need_confirm = false;
+                                    memset(pinCode, 0, sizeof(pinCode));
+                                    memset(confirmPin, 0, sizeof(confirmPin));
+                                    update_password(selectedIndex, pinIndex, pinCode);
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    // -------- Existing PIN verification flow --------
+                    if (pinIndex < PIN_LENGTH) {
+                        pinCode[pinIndex++] = selectedIndex;
+                        update_password(selectedIndex, pinIndex, pinCode);
+
+                        if (pinIndex == PIN_LENGTH) {
+                            if (verify_pin(pinCode)) {
+                                show_password_confirmed();
+                                return true;
+                            } else {
+                                u8g2_ClearBuffer(&u8g2);
+                                u8g2_SetFont(&u8g2, u8g2_font_profont10_tf);
+                                u8g2_DrawStr(&u8g2, 35, 32, "Wrong PIN!");
+                                u8g2_SendBuffer(&u8g2);
+                                vTaskDelay(pdMS_TO_TICKS(2000));
+
+                                // Reset to re-enter PIN
+                                pinIndex = 0;
+                                memset(pinCode, 0, sizeof(pinCode));
+                                update_password(selectedIndex, pinIndex, pinCode);
+                            }
                         }
                     }
                 }
@@ -154,5 +221,5 @@ bool handle_password_flow() {
         }
         vTaskDelay(pdMS_TO_TICKS(50));
     }
-    return false;
 }
+
