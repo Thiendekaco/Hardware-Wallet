@@ -10,9 +10,11 @@
 
 #include "curves.h"
 #include "memzero.h"
+#include "mnemonic.h"
 #include "u8g2.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "password.h"
 
 // Global variables to store public key and address
 extern u8g2_t u8g2;
@@ -205,14 +207,14 @@ bool get_public_key(HDNode *node, uint8_t *public_key, int key_size) {
 }
 
 // Sign message with the account at the given index
-bool sign_message(uint32_t accountIndex, const char *message, uint8_t *signature, int signature_size) {
-    if (signature_size < 64) return false;  // Ensure enough space for the signature
+int sign_message(uint32_t accountIndex, const char *message, uint8_t *signature, int signature_size) {
+    if (signature_size < 64) return 0;  // Ensure enough space for the signature
 
     // Derive the account HDNode for the given accountIndex
     HDNode node;
     if (!get_account(accountIndex, &node)) {
         show_message("Failed to get account!");
-        return false;
+        return 0;
     }
 
     // Hash the message using Keccak-256 (Ethereum specific)
@@ -225,21 +227,21 @@ bool sign_message(uint32_t accountIndex, const char *message, uint8_t *signature
     // Clear the hash for security
     memzero(hash, sizeof(hash));
 
-    return (ok == 0);  // Return true if signing was successful
+    return ok;  // Return true if signing was successful
 }
 
 
 // Sign transaction with the account at the given index
-bool sign_transaction(uint32_t accountIndex, const uint8_t *tx_data, int tx_len, uint8_t *signature, int signature_size) {
+int sign_transaction(uint32_t accountIndex, const uint8_t *tx_data, int tx_len, uint8_t *signature, int signature_size) {
     if (signature_size < 64) {
-        return false;  // Ensure enough space for the signature
+        return 0;  // Ensure enough space for the signature
     }
 
     // Derive the account HDNode for the given accountIndex
     HDNode node;
     if (!get_account(accountIndex, &node)) {
         show_message("Failed to get account!");
-        return false;
+        return 0;
     }
 
     // Hash the transaction data using Keccak-256 (Ethereum specific)
@@ -252,5 +254,90 @@ bool sign_transaction(uint32_t accountIndex, const uint8_t *tx_data, int tx_len,
     // Clear the hash for security
     memzero(hash, sizeof(hash));
 
-    return (ok == 0);  // Return true if signing was successful
+    return ok;  // Return true if signing was successful
 }
+
+void create_account_flow() {
+    char mnemonic[256];
+
+    // Start mnemonic UI flow
+    handle_mnemonic_flow(mnemonic);
+
+    // Derive HDNode from mnemonic and create the Ethereum account
+    create_account(mnemonic);
+}
+
+bool get_account_flow(uint32_t account_index, uint8_t *response, size_t *response_size) {
+    // Verify password before retrieving account
+    HDNode node;
+    if (!get_account(account_index, &node)) {
+        return false;  // Failed to get account
+    }
+
+    // Get address and public key from the HDNode
+    char address[43];
+    if (!get_address(&node, address, sizeof(address))) {
+        show_message("Failed to get address!");
+        return false;  // Failed to get address
+    }
+    uint8_t public_key[65];
+    if (!get_public_key(&node, public_key, sizeof(public_key))) {
+        show_message("Failed to get public key!");
+        return false;  // Failed to get public key
+    }
+
+    // Prepare chainCode (32 bytes)
+    uint8_t chainCode[32];
+    memcpy(chainCode, node.chain_code, 32);
+
+    // Start constructing the response
+    size_t total_size = 1 +  // Public key length
+                        1 +  // Address length
+                        65 + // Public key length
+                        1 +   // Address length
+                        32;  // Chain code length
+
+
+    if (response == NULL) {
+        *response_size = total_size;
+        return true;
+    }
+
+    // Fill the response buffer with the necessary data
+    response[0] = 65;  // Length of the public key
+    response[1] = 20;  // Length of the address
+
+    // Copy the public key, address, and chain code
+    memcpy(response + 2, public_key, 65);  // Public key
+    memcpy(response + 2 + 65, address, 20);  // Address
+    memcpy(response + 2 + 65 + 20, chainCode, 32);  // Chain code
+
+    *response_size = total_size;
+
+    return true;
+}
+
+int sign_message_flow(const char *message, uint8_t *signature, int signature_size, uint32_t account_index) {
+    // Verify password before signing
+    if (!handle_password_flow()) {
+        return 0; // Password verification failed
+    }
+
+    // Now derive the account based on account_index and sign the message
+    return sign_message(account_index, message, signature, signature_size);
+}
+
+
+int sign_transaction_flow(const uint8_t *tx_data, int tx_len, uint8_t *signature, int signature_size, uint32_t account_index) {
+    // Verify password before signing
+    if (!handle_password_flow()) {
+        return 0; // Password verification failed
+    }
+
+    // Now derive the account based on account_index and sign the transaction
+    return sign_transaction(account_index, tx_data, tx_len, signature, signature_size);
+}
+
+
+
+

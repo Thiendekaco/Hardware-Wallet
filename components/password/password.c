@@ -9,6 +9,7 @@
 #define PIN_LENGTH     4
 #define NVS_NAMESPACE  "storage"
 #define NVS_KEY        "pin_code"
+#define MAX_ATTEMPTS   5
 
 extern u8g2_t u8g2;
 
@@ -108,6 +109,7 @@ bool handle_password_flow() {
     int confirmPinIndex = 0;
 
     bool need_confirm = false;    // Flag for confirming new PIN
+    int failed_attempts = 0;      // Counter for failed attempts
 
     update_password(selectedIndex, pinIndex, pinCode);
 
@@ -116,17 +118,17 @@ bool handle_password_flow() {
 
     while (true) {
         if (is_button_left_pressed()) {
-            vTaskDelay(pdMS_TO_TICKS(200));
+            vTaskDelay(pdMS_TO_TICKS(400));
             selectedIndex = (selectedIndex - 1 + 11) % 11;
             update_password(selectedIndex, need_confirm ? confirmPinIndex : pinIndex, need_confirm ? confirmPin : pinCode);
         }
         else if (is_button_right_pressed()) {
-            vTaskDelay(pdMS_TO_TICKS(200));
+            vTaskDelay(pdMS_TO_TICKS(400));
             selectedIndex = (selectedIndex + 1) % 11;
             update_password(selectedIndex, need_confirm ? confirmPinIndex : pinIndex, need_confirm ? confirmPin : pinCode);
         }
         else if (is_button_middle_pressed()) {
-            vTaskDelay(pdMS_TO_TICKS(300));
+            vTaskDelay(pdMS_TO_TICKS(400));
 
             // Handle backspace
             if (selectedIndex == 10) {
@@ -203,11 +205,24 @@ bool handle_password_flow() {
                                 show_password_confirmed();
                                 return true;
                             } else {
+                                failed_attempts++;  // Increment failed attempt counter
+
+                                // Show error message
                                 u8g2_ClearBuffer(&u8g2);
                                 u8g2_SetFont(&u8g2, u8g2_font_profont10_tf);
                                 u8g2_DrawStr(&u8g2, 35, 32, "Wrong PIN!");
                                 u8g2_SendBuffer(&u8g2);
                                 vTaskDelay(pdMS_TO_TICKS(2000));
+
+                                // Check if max attempts reached
+                                if (failed_attempts >= MAX_ATTEMPTS) {
+                                    u8g2_ClearBuffer(&u8g2);
+                                    u8g2_SetFont(&u8g2, u8g2_font_profont10_tf);
+                                    u8g2_DrawStr(&u8g2, 20, 32, "Too many failed attempts.");
+                                    u8g2_SendBuffer(&u8g2);
+                                    vTaskDelay(pdMS_TO_TICKS(2000));
+                                    return false;  // Return false if failed 5 times
+                                }
 
                                 // Reset to re-enter PIN
                                 pinIndex = 0;
