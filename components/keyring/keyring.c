@@ -102,6 +102,11 @@ bool isHaveAccount() {
 
 // Load HDNode from NVS
 bool load_hdnode_from_nvs(HDNode *node) {
+    // Initialize structure to a known state before loading data
+    memzero(node, sizeof(HDNode));
+    node->curve = get_curve_by_name(SECP256K1_NAME);
+    node->depth = 0;
+    node->child_num = 0;
     nvs_handle_t handle;
     esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READONLY, &handle);
     if (err != ESP_OK) {
@@ -251,8 +256,13 @@ bool get_address_raw(HDNode *node, uint8_t *address_raw) {
 
 // Get public key from the HDNode
 bool get_public_key(HDNode *node, uint8_t *public_key, int key_size) {
-    if (key_size < 65) return false;
-    memcpy(public_key, g_public_key, 65);
+    if (!node || !public_key || key_size < 65) {
+        return false;
+    }
+
+    // Derive the uncompressed public key directly from the node's private key
+    ecdsa_get_public_key65(node->curve->params, node->private_key, public_key);
+
     return true;
 }
 
@@ -333,12 +343,15 @@ bool get_account_flow(uint32_t account_index, uint8_t *response, size_t *respons
         return false;  // Failed to get address
     }
 
+    ESP_LOGI(TAG, "Loaded address raw");
+
     uint8_t public_key[65];
     if (!get_public_key(&node, public_key, sizeof(public_key))) {
         show_message("Failed to get public key!");
         return false;  // Failed to get public key
     }
 
+    ESP_LOGI(TAG, "Loaded publickey raw");
     // Prepare chainCode (32 bytes)
     uint8_t chainCode[32];
     memcpy(chainCode, node.chain_code, 32);
