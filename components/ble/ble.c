@@ -13,6 +13,7 @@
 #include "u8g2.h"
 #include "ui_state.h"
 #include "button_listener.h"
+#include "keyring.h"
 
 static const char* TAG = "BLE_Component";
 extern u8g2_t u8g2;
@@ -71,10 +72,101 @@ static esp_ble_adv_data_t adv_data = {
 #define CHAR_PERM (ESP_GATT_PERM_READ | ESP_GATT_PERM_WRITE)
 #define CHAR_PROP (ESP_GATT_CHAR_PROP_BIT_READ | ESP_GATT_CHAR_PROP_BIT_WRITE | ESP_GATT_CHAR_PROP_BIT_NOTIFY)
 
+
+/*
+ * BLE command format written to the main characteristic:
+ *   byte 0  : command ID
+ *   byte 1..n : parameters depending on the command
+ *
+ * Command IDs
+ *   0x01 - Get account information. Parameters: 4 byte big-endian account index.
+ *           Response contains public key, address and chain code.
+ *   0x02 - Sign message. Parameters: 4 byte account index followed by the
+ *           message bytes. The device returns a 64 byte signature.
+ *   0x03 - Sign transaction. Parameters: 4 byte account index followed by raw
+ *           transaction data. The response is a 64 byte signature.
+ */
+static void process_ble_command(const uint8_t *data, size_t len) {
+    if (len < 1) {
+        ESP_LOGE(TAG, "BLE cmd too short");
+        return;
+    }
+
+    uint8_t cmd = data[0];
+    switch (cmd) {
+        case 0x01: { // Get account information
+            if (len < 5) {
+                ESP_LOGE(TAG, "Get account cmd invalid length");
+                return;
+            }
+            uint32_t index = (data[1] << 24) | (data[2] << 16) | (data[3] << 8) | data[4];
+            uint8_t resp[128];
+            size_t resp_size = 0;
+            if (get_account_flow(index, resp, &resp_size)) {
+                ble_send_data(resp, resp_size);
+            } else {
+                uint8_t err = 0xff;
+                ble_send_data(&err, 1);
+            }
+            break;
+        }
+
+        case 0x02: { // Sign message
+            if (len < 5) {
+                ESP_LOGE(TAG, "Sign message cmd invalid length");
+                return;
+            }
+            uint32_t index = (data[1] << 24) | (data[2] << 16) | (data[3] << 8) | data[4];
+            const size_t msg_len = len - 5;
+            char msg_buf[RECV_BUFFER_SIZE];
+            if (msg_len >= sizeof(msg_buf)) {
+                ESP_LOGE(TAG, "Message too long");
+                return;
+            }
+            memcpy(msg_buf, &data[5], msg_len);
+            msg_buf[msg_len] = '\0';
+
+            uint8_t sig[64];
+            int ok = sign_message_flow(msg_buf, sig, sizeof(sig), index);
+            if (ok) {
+                ble_send_data(sig, sizeof(sig));
+            } else {
+                uint8_t err = 0xfe;
+                ble_send_data(&err, 1);
+            }
+            break;
+        }
+
+        case 0x03: { // Sign transaction
+            if (len < 5) {
+                ESP_LOGE(TAG, "Sign tx cmd invalid length");
+                return;
+            }
+            uint32_t index = (data[1] << 24) | (data[2] << 16) | (data[3] << 8) | data[4];
+            const uint8_t *tx = &data[5];
+            size_t tx_len = len - 5;
+            uint8_t sig[64];
+            int ok = sign_transaction_flow(tx, tx_len, sig, sizeof(sig), index);
+            if (ok) {
+                ble_send_data(sig, sizeof(sig));
+            } else {
+                uint8_t err = 0xfd;
+                ble_send_data(&err, 1);
+            }
+            break;
+        }
+
+        default:
+            ESP_LOGW(TAG, "Unknown BLE cmd %02x", cmd);
+            break;
+    }
+}
+
 static bool ble_pairing_flow(const char *code) {
+    ui_wait_until_free();
+    ui_set_busy(true);
     int selected = 1; // 0 = No, 1 = Yes
     while (1) {
-        ui_wait_until_free();
         u8g2_ClearBuffer(&u8g2);
         u8g2_SetFont(&u8g2, u8g2_font_profont10_tf);
         u8g2_DrawStr(&u8g2, 20, 10, "Pairing request");
@@ -88,6 +180,7 @@ static bool ble_pairing_flow(const char *code) {
         }
         if (is_button_middle_pressed()) {
             vTaskDelay(pdMS_TO_TICKS(300));
+            ui_set_busy(false);
             return selected == 1;
         }
         vTaskDelay(pdMS_TO_TICKS(50));
@@ -214,9 +307,8 @@ static void ble_gatt_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_t gat
                     memcpy(recv_buffer, param->write.value, copy_len);
                     recv_len = copy_len;
 
-                    // XỬ LÝ DỮ LIỆU NHẬN ĐƯỢC NGAY TẠI ĐÂY
+                    process_ble_command(recv_buffer, recv_len);
 
-                    // Gửi phản hồi OK nếu client cần
                     if (param->write.need_rsp) {
                         esp_ble_gatts_send_response(gatts_if_handle, param->write.conn_id, param->write.trans_id, ESP_GATT_OK, NULL);
                     }
@@ -318,9 +410,7 @@ void ble_task(void* param) {
 
     while (1) {
         if (xQueueReceive(pair_request_queue, &dummy, pdMS_TO_TICKS(500))) {
-            ui_set_busy(true);
             bool ok = ble_pairing_flow(pending_pair_request.code);
-            ui_set_busy(false);
             if (ok) {
                 ble_send_data((uint8_t*)pending_pair_request.code, strlen(pending_pair_request.code));
             } else {

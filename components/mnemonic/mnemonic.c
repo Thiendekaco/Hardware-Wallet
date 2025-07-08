@@ -311,7 +311,7 @@ bool create_new_mnemonic_flow(char *out_mnemonic) {
     show_message("Your new seed phrase");
 
     // 2. Generate a new mnemonic phrase
-    bool success = create_new_mnemonic(out_mnemonic, sizeof(out_mnemonic));
+    bool success = create_new_mnemonic(out_mnemonic, MNEMONIC_WORDS_LETTER);
     if (!success) {
         show_message("Failed to create mnemonic!");
         return false;

@@ -31,15 +31,6 @@ static const uint32_t ETH_DERIVATION_PATH[] = {
 };
 #define ETH_DERIVATION_PATH_LEN 5
 
-// Show message on the display
-void show_message(const char *msg) {
-    u8g2_ClearBuffer(&u8g2);
-    u8g2_SetFont(&u8g2, u8g2_font_profont10_tf);
-    u8g2_DrawStr(&u8g2, 20, 20, msg);
-    u8g2_SendBuffer(&u8g2);
-    vTaskDelay(pdMS_TO_TICKS(1500));
-}
-
 // Save HDNode to NVS
 void save_hdnode_to_nvs(HDNode *node) {
     nvs_handle_t handle;

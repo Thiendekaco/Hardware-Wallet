@@ -20,11 +20,11 @@ void show_enter_recovery_phrase_ui();
 // out_mnemonic: buffer for the phrase (should be at least 256 bytes).
 bool create_new_mnemonic(char *out_mnemonic, int out_size);
 
-bool create_new_mnemonic_flow();
+bool create_new_mnemonic_flow(char *out_mnemonic);
 
 void import_mnemonic(const char *mnemonic);
 
-void import_mnemonic_flow();
+void import_mnemonic_flow(char *out_mnemonic);
 
 // Display the mnemonic, one word at a time, to the user for backup.
 void show_mnemonic_ui(const char *mnemonic);
@@ -47,6 +47,8 @@ typedef enum {
 
 MenuOption select_create_or_import_ui();
 
-void handle_mnemonic_flow();
+void show_message(const char *msg);
+
+void handle_mnemonic_flow(char *out_mnemonic);
 
 #endif // MNEMONIC_H

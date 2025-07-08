@@ -13,7 +13,7 @@
 #include "nvs_flash.h"
 #include "button_listener.h"
 #include "password.h"
-#include "mnemonic.h"
+#include "keyring.h"
 #include "splash_screen.h"
 
 #define I2C_MASTER_SCL_IO           GPIO_NUM_22      // GPIO number for I2C master clock
@@ -205,9 +205,9 @@ void app_main(void)
     ESP_LOGI(TAG, "=== RUN TASK START ===");
     show_splash_screen(&u8g2, splashTasks, sizeof(splashTasks)/sizeof(splashTasks[0]));
 
-    // bool isNewPassword = !is_password_set();
-    // handle_password_flow(&u8g2);
-    // handle_mnemonic_flow();
+    bool isNewPassword = !is_password_set();
+    handle_password_flow(&u8g2);
+    create_account_flow();
 
     while (1) {
         vTaskDelay(pdMS_TO_TICKS(1000));
