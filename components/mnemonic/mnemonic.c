@@ -1,6 +1,7 @@
 #include "mnemonic.h"
 #include "u8g2.h"
 #include "bip39.h"
+#include "ui_state.h"
 #include "button_listener.h"
 #include <string.h>
 #include "freertos/FreeRTOS.h"
@@ -16,6 +17,7 @@ int select_length_mnemonic_ui() {
     const int options[3] = {24, 18, 12};
     int selected = 0;
     while (1) {
+        ui_wait_until_free();
         u8g2_ClearBuffer(&u8g2);
         u8g2_SetFont(&u8g2, u8g2_font_profont10_tf);
 
@@ -87,6 +89,7 @@ void input_word_ui(int word_index, char *out_word, int out_word_size) {
     bool done = false;
 
     while (!done) {
+        ui_wait_until_free();
         // --- Render UI ---
         u8g2_ClearBuffer(&u8g2);
 
@@ -193,6 +196,7 @@ void show_mnemonic_ui(const char *mnemonic) {
     int num_words = split_mnemonic(mnemonic, words, 24);
     int idx = 0;
     while (1) {
+        ui_wait_until_free();
         u8g2_ClearBuffer(&u8g2);
         u8g2_SetFont(&u8g2, u8g2_font_profont10_tf);
 
@@ -259,6 +263,7 @@ bool confirm_mnemonic(const char *mnemonic, int num_words, int num_check) {
     split_mnemonic(mnemonic, words, 24);
 
     while (1) {
+        ui_wait_until_free();
         // Generate num_check unique random indices each round
         pick_random_indices(indices, num_words, num_check);
 
@@ -374,6 +379,7 @@ MenuOption select_create_or_import_ui() {
     int selected = 0;
 
     while (1) {
+        ui_wait_until_free();
         u8g2_ClearBuffer(&u8g2);
         u8g2_SetFont(&u8g2, u8g2_font_profont10_tf);
 

@@ -9,9 +9,13 @@
 #include "freertos/task.h"
 #include "string.h"
 #include "esp_random.h"
+#include <stdbool.h>
+#include "u8g2.h"
+#include "ui_state.h"
+#include "button_listener.h"
 
 static const char* TAG = "BLE_Component";
-
+extern u8g2_t u8g2;
 static uint8_t is_connected = BLE_DISCONNECTED;
 static ble_session_info_t current_session;
 
@@ -25,8 +29,10 @@ static uint16_t cccd_handle = 0; // Client Characteristic Configuration Descript
 #define RECV_BUFFER_SIZE 256
 static uint8_t recv_buffer[RECV_BUFFER_SIZE];
 static size_t recv_len = 0;
-
 static bool notify_enabled = false;
+static ble_pair_request_t pending_pair_request;
+static QueueHandle_t pair_request_queue;
+
 
 // UUID 128-bit example (custom service & characteristic)
 static const uint8_t service_uuid[16] = {
@@ -64,6 +70,29 @@ static esp_ble_adv_data_t adv_data = {
 // Permissions and properties
 #define CHAR_PERM (ESP_GATT_PERM_READ | ESP_GATT_PERM_WRITE)
 #define CHAR_PROP (ESP_GATT_CHAR_PROP_BIT_READ | ESP_GATT_CHAR_PROP_BIT_WRITE | ESP_GATT_CHAR_PROP_BIT_NOTIFY)
+
+static bool ble_pairing_flow(const char *code) {
+    int selected = 1; // 0 = No, 1 = Yes
+    while (1) {
+        ui_wait_until_free();
+        u8g2_ClearBuffer(&u8g2);
+        u8g2_SetFont(&u8g2, u8g2_font_profont10_tf);
+        u8g2_DrawStr(&u8g2, 20, 10, "Pairing request");
+        u8g2_DrawStr(&u8g2, 40, 20, code);
+        u8g2_DrawStr(&u8g2, 20, 30, selected ? "[Yes]   No" : " Yes   [No]");
+        u8g2_SendBuffer(&u8g2);
+
+        if (is_button_left_pressed() || is_button_right_pressed()) {
+            selected = !selected;
+            vTaskDelay(pdMS_TO_TICKS(300));
+        }
+        if (is_button_middle_pressed()) {
+            vTaskDelay(pdMS_TO_TICKS(300));
+            return selected == 1;
+        }
+        vTaskDelay(pdMS_TO_TICKS(50));
+    }
+}
 
 static void ble_gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *param) {
     switch(event) {
@@ -158,6 +187,14 @@ static void ble_gatt_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_t gat
                 current_session.session_id[i] = esp_random() & 0xFF;
             }
             current_session.last_activity_time = esp_log_timestamp();
+
+            pending_pair_request.conn_id = conn_id;
+            memcpy(pending_pair_request.remote_bda, param->connect.remote_bda, sizeof(esp_bd_addr_t));
+            uint32_t code = esp_random() % 1000000;
+            snprintf(pending_pair_request.code, sizeof(pending_pair_request.code), "%06u", (unsigned int)code);
+
+            int dummy = 0;
+            xQueueSend(pair_request_queue, &dummy, 0);
             break;
         }
 
@@ -234,6 +271,8 @@ esp_err_t ble_init(void) {
     ESP_ERROR_CHECK(esp_ble_gatts_register_callback(ble_gatt_event_handler));
     ESP_ERROR_CHECK(esp_ble_gatts_app_register(PROFILE_APP_ID));
 
+    pair_request_queue = xQueueCreate(1, sizeof(int));
+
     return ESP_OK;
 }
 
@@ -275,8 +314,19 @@ const ble_session_info_t* ble_get_session_info(void) {
 }
 
 void ble_task(void* param) {
+    int dummy;
+
     while (1) {
-        vTaskDelay(pdMS_TO_TICKS(1000));
+        if (xQueueReceive(pair_request_queue, &dummy, pdMS_TO_TICKS(500))) {
+            ui_set_busy(true);
+            bool ok = ble_pairing_flow(pending_pair_request.code);
+            ui_set_busy(false);
+            if (ok) {
+                ble_send_data((uint8_t*)pending_pair_request.code, strlen(pending_pair_request.code));
+            } else {
+                esp_ble_gap_disconnect(pending_pair_request.remote_bda);
+            }
+        }
         ble_session_timeout_check();
     }
 }

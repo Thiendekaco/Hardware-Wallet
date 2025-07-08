@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "ui_state.h"
 
 #define PIN_LENGTH     4
 #define NVS_NAMESPACE  "storage"
@@ -117,6 +118,7 @@ bool handle_password_flow() {
     bool password_set = is_password_set();
 
     while (true) {
+        ui_wait_until_free();
         if (is_button_left_pressed()) {
             vTaskDelay(pdMS_TO_TICKS(400));
             selectedIndex = (selectedIndex - 1 + 11) % 11;

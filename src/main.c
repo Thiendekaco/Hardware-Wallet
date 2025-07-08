@@ -207,7 +207,7 @@ void app_main(void)
 
     // bool isNewPassword = !is_password_set();
     // handle_password_flow(&u8g2);
-    handle_mnemonic_flow();
+    // handle_mnemonic_flow();
 
     while (1) {
         vTaskDelay(pdMS_TO_TICKS(1000));
