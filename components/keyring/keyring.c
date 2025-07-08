@@ -18,6 +18,8 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "password.h"
+#include "button_listener.h"
+#include "ui_state.h"
 
 #define NVS_NAMESPACE  "storage"
 #define NVS_PRV_KEY        "private_key"
@@ -39,6 +41,39 @@ static const uint32_t ETH_DERIVATION_PATH[] = {
     0
 };
 #define ETH_DERIVATION_PATH_LEN 5
+
+// Display the address on screen and ask the user to approve sending it.
+static bool confirm_send_address(const char *address) {
+    ui_wait_until_free();
+    ui_set_busy(true);
+    int selected = 1; // 0 = No, 1 = Yes
+
+    char line1[22] = {0};
+    char line2[22] = {0};
+    strncpy(line1, address, 21);
+    strncpy(line2, address + 21, 21);
+
+    while (1) {
+        u8g2_ClearBuffer(&u8g2);
+        u8g2_SetFont(&u8g2, u8g2_font_profont10_tf);
+        u8g2_DrawStr(&u8g2, 0, 8, "Share address?");
+        u8g2_DrawStr(&u8g2, 0, 16, line1);
+        u8g2_DrawStr(&u8g2, 0, 24, line2);
+        u8g2_DrawStr(&u8g2, 20, 32, selected ? "[Yes]   No" : " Yes   [No]");
+        u8g2_SendBuffer(&u8g2);
+
+        if (is_button_left_pressed() || is_button_right_pressed()) {
+            selected = !selected;
+            vTaskDelay(pdMS_TO_TICKS(300));
+        }
+        if (is_button_middle_pressed()) {
+            vTaskDelay(pdMS_TO_TICKS(300));
+            ui_set_busy(false);
+            return selected == 1;
+        }
+        vTaskDelay(pdMS_TO_TICKS(50));
+    }
+}
 
 // Save HDNode to NVS
 void save_hdnode_to_nvs(HDNode *node) {
@@ -338,9 +373,15 @@ bool get_account_flow(uint32_t account_index, uint8_t *response, size_t *respons
 
     // Get address and public key from the HDNode
     uint8_t address_raw[20];
-    if (!get_address_raw(&node, address_raw)) {
+    char address_str[43];
+    if (!get_address_raw(&node, address_raw) ||
+        !get_address(&node, address_str, sizeof(address_str))) {
         show_message("Failed to get address!");
         return false;  // Failed to get address
+    }
+
+    if (!confirm_send_address(address_str)) {
+        return false;  // User rejected sharing the address
     }
 
     ESP_LOGI(TAG, "Loaded address raw");
