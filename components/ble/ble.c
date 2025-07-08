@@ -320,8 +320,13 @@ static void ble_gatt_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_t gat
         case ESP_GATTS_ADD_CHAR_DESCR_EVT: {
             cccd_handle = param->add_char_descr.attr_handle;
 
-            // Bắt đầu service
-            esp_ble_gatts_start_service(service_handle);
+            ret = esp_ble_gatts_start_service(service_handle);
+            if (ret == ESP_OK) {
+                esp_ble_gap_config_adv_data(&adv_data);
+                esp_ble_gap_start_advertising(&adv_params);
+            } else {
+                ESP_LOGE(TAG, "Start service failed %d", ret);
+            }
             break;
         }
 

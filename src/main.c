@@ -91,7 +91,6 @@ static void task_bleInit(void)
 {
     ESP_LOGI(TAG, "RUN BLE INIT");
     ESP_ERROR_CHECK(ble_init());
-    ESP_ERROR_CHECK(ble_start_advertising());
     xTaskCreate(ble_task, "ble_task", 4096, NULL, 5, NULL);
     ESP_LOGI(TAG, "BLE INIT END");
 }

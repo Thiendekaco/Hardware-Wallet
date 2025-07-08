@@ -17,13 +17,6 @@ typedef struct {
  uint32_t last_activity_time;   // Timestamp of last activity
 } ble_session_info_t;
 
-typedef enum {
- PAIR_SCREEN_CODE = 0,
- PAIR_SCREEN_CONFIRM,
- PAIR_SCREEN_REJECT,
- PAIR_SCREEN_COUNT
-} pair_screen_t;
-
 typedef struct {
  uint16_t conn_id;
  esp_bd_addr_t remote_bda;
