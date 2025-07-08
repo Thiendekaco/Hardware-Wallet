@@ -3,6 +3,7 @@
 
 #include "esp_bt_device.h"
 #include <string.h>
+#include <stdbool.h>
 
 // BLE Connection status
 #define BLE_CONNECTED      1
@@ -21,6 +22,7 @@ typedef struct {
  uint16_t conn_id;
  esp_bd_addr_t remote_bda;
  char code[7];
+ bool confirm_required;
 } ble_pair_request_t;
 
 // Initialize BLE stack and register callbacks

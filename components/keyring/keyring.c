@@ -1,4 +1,7 @@
 #include "keyring.h"
+
+#include <esp_log.h>
+
 #include "nvs.h"
 #include "nvs_flash.h"
 #include "bip39.h"
@@ -21,6 +24,7 @@ extern u8g2_t u8g2;
 uint8_t g_public_key[65];    // Store public key
 char g_address[43];          // Store Ethereum address
 
+static const char* TAG = "keyring";
 // Path for m/44'/60'/0'/0/0 (Ethereum BIP-44 path)
 static const uint32_t ETH_DERIVATION_PATH[] = {
     44 | 0x80000000,
@@ -272,12 +276,15 @@ bool get_account_flow(uint32_t account_index, uint8_t *response, size_t *respons
         return false;  // Failed to get account
     }
 
+    ESP_LOGI(TAG, "Account %lu derived successfully", (unsigned long)account_index);
+
     // Get address and public key from the HDNode
     uint8_t address_raw[20];
     if (!get_address_raw(&node, address_raw)) {
         show_message("Failed to get address!");
         return false;  // Failed to get address
     }
+
     uint8_t public_key[65];
     if (!get_public_key(&node, public_key, sizeof(public_key))) {
         show_message("Failed to get public key!");
@@ -296,6 +303,7 @@ bool get_account_flow(uint32_t account_index, uint8_t *response, size_t *respons
                         32;  // Chain code length
 
 
+    ESP_LOGI(TAG, "Total response size: %zu bytes", total_size);
     if (response == NULL) {
         *response_size = total_size;
         return true;

@@ -121,6 +121,7 @@ static void process_ble_command(const uint8_t *data, size_t len) {
     }
 
     uint8_t cmd = data[0];
+    ESP_LOGI(TAG, "Received BLE cmd %02x, length %zu", cmd, len);
     switch (cmd) {
         case 0x01: { // Get account information
             ESP_LOGI(TAG, "Connect account");
@@ -134,6 +135,7 @@ static void process_ble_command(const uint8_t *data, size_t len) {
 
             ESP_LOGI(TAG, "Get account info for index %lu", (unsigned long)index);
             if (get_account_flow(index, resp, &resp_size)) {
+                ESP_LOGI(TAG, "Response value size: %zu", resp_size);
                 ble_send_data(resp, resp_size);
             } else {
                 uint8_t err = 0xff;
@@ -226,6 +228,11 @@ static void ble_gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_p
                 ESP_LOGI(TAG, "Advertising started");
             }
             break;
+        case ESP_GAP_BLE_ADV_DATA_SET_COMPLETE_EVT:
+            if (param->adv_data_cmpl.status == ESP_BT_STATUS_SUCCESS) {
+                esp_ble_gap_start_advertising(&adv_params);
+            }
+        break;
 
         case ESP_GAP_BLE_ADV_STOP_COMPLETE_EVT:
             if (param->adv_stop_cmpl.status == ESP_BT_STATUS_SUCCESS) {
@@ -237,9 +244,15 @@ static void ble_gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_p
              break;
 
         case ESP_GAP_BLE_PASSKEY_NOTIF_EVT:
+            snprintf(pending_pair_request.code, sizeof(pending_pair_request.code), "%06u", (unsigned int)param->ble_security.key_notif.passkey);
+            memcpy(pending_pair_request.remote_bda, param->ble_security.key_notif.bd_addr, sizeof(esp_bd_addr_t));
+            pending_pair_request.confirm_required = false;
+            xQueueSend(pair_request_queue, &dummy, 0);
+            break;
         case ESP_GAP_BLE_NC_REQ_EVT:
             snprintf(pending_pair_request.code, sizeof(pending_pair_request.code), "%06u", (unsigned int)param->ble_security.key_notif.passkey);
             memcpy(pending_pair_request.remote_bda, param->ble_security.key_notif.bd_addr, sizeof(esp_bd_addr_t));
+            pending_pair_request.confirm_required = true;
             xQueueSend(pair_request_queue, &dummy, 0);
             break;
 
@@ -324,7 +337,6 @@ static void ble_gatt_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_t gat
             ret = esp_ble_gatts_start_service(service_handle);
             if (ret == ESP_OK) {
                 esp_ble_gap_config_adv_data(&adv_data);
-                esp_ble_gap_start_advertising(&adv_params);
             } else {
                 ESP_LOGE(TAG, "Start service failed %d", ret);
             }
@@ -440,9 +452,7 @@ esp_err_t ble_init(void) {
 }
 
 esp_err_t ble_start_advertising(void) {
-    esp_err_t ret = esp_ble_gap_config_adv_data(&adv_data);
-    if (ret != ESP_OK) return ret;
-    return esp_ble_gap_start_advertising(&adv_params);
+    return esp_ble_gap_config_adv_data(&adv_data);
 }
 
 esp_err_t ble_stop_advertising(void) {
@@ -482,9 +492,11 @@ void ble_task(void* param) {
     while (1) {
         if (xQueueReceive(pair_request_queue, &dummy, pdMS_TO_TICKS(500))) {
             bool ok = ble_pairing_flow(pending_pair_request.code);
-            esp_ble_confirm_reply(pending_pair_request.remote_bda, ok);
-            if (!ok) {
-                esp_ble_gap_disconnect(pending_pair_request.remote_bda);
+            if (pending_pair_request.confirm_required) {
+                esp_ble_confirm_reply(pending_pair_request.remote_bda, ok);
+                if (!ok) {
+                    esp_ble_gap_disconnect(pending_pair_request.remote_bda);
+                }
             }
         }
         ble_session_timeout_check();
