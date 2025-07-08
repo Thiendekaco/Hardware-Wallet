@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include "driver/gpio.h"
-#include "driver/i2c_master.h" 
+#include "driver/i2c.h"
+#include "ble.h"
 #include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -14,7 +15,6 @@
 #include "password.h"
 #include "mnemonic.h"
 #include "splash_screen.h"
-#include "driver/i2c.h"
 
 #define I2C_MASTER_SCL_IO           GPIO_NUM_22      // GPIO number for I2C master clock
 #define I2C_MASTER_SDA_IO           GPIO_NUM_21      // GPIO number for I2C master data
@@ -25,8 +25,7 @@
 
 static const char *TAG = "main";
 
-i2c_master_bus_handle_t i2c_bus = NULL;
-i2c_master_dev_handle_t i2c_dev = NULL;
+static const uint8_t OLED_ADDR = 0x3C;
 
 u8g2_t u8g2; // a structure which will contain all the data for one display
 
@@ -37,12 +36,14 @@ u8g2_t u8g2; // a structure which will contain all the data for one display
 static void task_displaySetup(void);
 static void task_nvsInit(void);
 static void task_initButtons(void);
+static void task_bleInit(void);
 
 // Array of initialization tasks passed into show_splash_screen()
 static InitTask splashTasks[] = {
     task_displaySetup,
     task_nvsInit,
-    task_initButtons
+    task_initButtons,
+    task_bleInit
 };
 
 // ------------------------------------------------------------------
@@ -83,6 +84,20 @@ static void task_initButtons(void)
 }
 
 // ------------------------------------------------------------------
+// task_bleInit:
+//   Initializes BLE stack and starts advertising.
+// ------------------------------------------------------------------
+static void task_bleInit(void)
+{
+    ESP_LOGI(TAG, "RUN BLE INIT");
+    ESP_ERROR_CHECK(ble_init());
+    ESP_ERROR_CHECK(ble_start_advertising());
+    xTaskCreate(ble_task, "ble_task", 4096, NULL, 5, NULL);
+    ESP_LOGI(TAG, "BLE INIT END");
+}
+
+
+// ------------------------------------------------------------------
 // app_main:
 //   1. Log application start.
 //   2. Initialize I2C bus and SSD1306 driver.
@@ -93,33 +108,26 @@ static void task_initButtons(void)
 
 esp_err_t i2c_master_init(void)
 {
-    i2c_master_bus_config_t i2c_bus_config = {
-        .i2c_port = -1,
+    i2c_config_t conf = {
+        .mode = I2C_MODE_MASTER,
         .sda_io_num = I2C_MASTER_SDA_IO,
         .scl_io_num = I2C_MASTER_SCL_IO,
-        .clk_source = I2C_CLK_SRC_DEFAULT,
-        .glitch_ignore_cnt = 7,
-        .intr_priority = 1,
-        .flags = {
-            .enable_internal_pullup = true
-        }
+        .sda_pullup_en = GPIO_PULLUP_ENABLE,
+               .scl_pullup_en = GPIO_PULLUP_ENABLE,
+               .master.clk_speed = I2C_MASTER_FREQ_HZ,
     };
-    esp_err_t err = i2c_new_master_bus(&i2c_bus_config, &i2c_bus);
+    esp_err_t err = i2c_param_config(I2C_MASTER_NUM, &conf);
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "I2C bus initialization failed");
+        ESP_LOGE(TAG, "I2C param config failed: %s", esp_err_to_name(err));
+        return err;
     }
 
-    i2c_device_config_t i2c_dev_config = {
-        .dev_addr_length = I2C_ADDR_BIT_LEN_7,
-        .device_address = 0x3C,
-        .scl_speed_hz = I2C_MASTER_FREQ_HZ,
-        .scl_wait_us = 1000,
-        .flags = {
-            .disable_ack_check = false
-        }
-    };
-
-    i2c_master_bus_add_device(i2c_bus, &i2c_dev_config, &i2c_dev);
+    err = i2c_driver_install(I2C_MASTER_NUM, conf.mode,
+                                 I2C_MASTER_RX_BUF_DISABLE,
+                                 I2C_MASTER_TX_BUF_DISABLE, 0);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "I2C driver install failed: %s", esp_err_to_name(err));
+    }
     return err;
 }
 
@@ -168,7 +176,9 @@ uint8_t u8x8_byte_esp32_i2c(u8x8_t *u8x8, uint8_t msg, uint8_t arg_int, void *ar
                buf_idx = 0;
                break;
            case U8X8_MSG_BYTE_END_TRANSFER:
-               i2c_master_transmit(i2c_dev, buffer, buf_idx, 1000 / portTICK_PERIOD_MS);
+               i2c_master_write_to_device(I2C_MASTER_NUM, OLED_ADDR,
+                                         buffer, buf_idx,
+                                         1000 / portTICK_PERIOD_MS);
                break;
            default:
                return 0;
