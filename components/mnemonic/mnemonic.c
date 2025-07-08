@@ -317,15 +317,15 @@ bool create_new_mnemonic_flow(char *out_mnemonic) {
         return false;
     }
 
-    // 3. Display each mnemonic word for user to write down
-    show_mnemonic_ui(out_mnemonic);
-
-    // 4. Confirm the user has written down the mnemonic (ask 3 random words)
-    bool confirmed = confirm_mnemonic(out_mnemonic, MNEMONIC_WORDS, 3);
-    if (confirmed) {
-        show_message("Setup complete!");
-        return true;
-    }
+    // // 3. Display each mnemonic word for user to write down
+    // show_mnemonic_ui(out_mnemonic);
+    //
+    // // 4. Confirm the user has written down the mnemonic (ask 3 random words)
+    // bool confirmed = confirm_mnemonic(out_mnemonic, MNEMONIC_WORDS, 3);
+    // if (confirmed) {
+    //     show_message("Setup complete!");
+    //     return true;
+    // }
 
     return false;
 }

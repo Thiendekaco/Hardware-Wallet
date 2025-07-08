@@ -11,6 +11,7 @@
 #include "esp_random.h"
 #include <stdbool.h>
 #include "u8g2.h"
+#include <stdio.h>
 #include "ui_state.h"
 #include "button_listener.h"
 #include "keyring.h"
@@ -71,7 +72,7 @@ static esp_ble_adv_data_t adv_data = {
     .p_service_uuid = (uint8_t*)service_uuid,
     .flag = (ESP_BLE_ADV_FLAG_GEN_DISC | ESP_BLE_ADV_FLAG_BREDR_NOT_SPT),
 };
-
+static bool ble_confirm_connect(const esp_bd_addr_t bda);
 static bool load_bonded_addr(esp_bd_addr_t addr) {
     nvs_handle_t handle;
     size_t size = sizeof(esp_bd_addr_t);
@@ -281,6 +282,10 @@ static void ble_gatt_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_t gat
         }
 
         case ESP_GATTS_CONNECT_EVT: {
+            if (!ble_confirm_connect(param->connect.remote_bda)) {
+                esp_ble_gap_disconnect(param->connect.remote_bda);
+                break;
+            }
             is_connected = BLE_CONNECTED;
             conn_id = param->connect.conn_id;
 
@@ -346,15 +351,6 @@ static void ble_gatt_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_t gat
 }
 
 esp_err_t ble_init(void) {
-    esp_err_t ret;
-
-    ret = nvs_flash_init();
-    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-        ESP_ERROR_CHECK(nvs_flash_erase());
-        ret = nvs_flash_init();
-    }
-    ESP_ERROR_CHECK(ret);
-
     esp_bt_controller_config_t bt_cfg = BT_CONTROLLER_INIT_CONFIG_DEFAULT();
     ESP_ERROR_CHECK(esp_bt_controller_init(&bt_cfg));
     ESP_ERROR_CHECK(esp_bt_controller_enable(ESP_BT_MODE_BLE));
@@ -414,6 +410,36 @@ void ble_task(void* param) {
         vTaskDelay(pdMS_TO_TICKS(500));
     }
 }
+
+static bool ble_confirm_connect(const esp_bd_addr_t bda) {
+    ui_wait_until_free();
+    ui_set_busy(true);
+    char addr_str[18];
+    snprintf(addr_str, sizeof(addr_str), "%02X:%02X:%02X:%02X:%02X:%02X",
+             bda[0], bda[1], bda[2], bda[3], bda[4], bda[5]);
+
+    int selected = 1; // 0 = No, 1 = Yes
+    while (1) {
+        u8g2_ClearBuffer(&u8g2);
+        u8g2_SetFont(&u8g2, u8g2_font_profont10_tf);
+        u8g2_DrawStr(&u8g2, 10, 12, "Connect?");
+        u8g2_DrawStr(&u8g2, 10, 24, addr_str);
+        u8g2_DrawStr(&u8g2, 20, 32, selected ? "[Yes]   No" : " Yes   [No]");
+        u8g2_SendBuffer(&u8g2);
+
+        if (is_button_left_pressed() || is_button_right_pressed()) {
+            selected = !selected;
+            vTaskDelay(pdMS_TO_TICKS(300));
+        }
+        if (is_button_middle_pressed()) {
+            vTaskDelay(pdMS_TO_TICKS(300));
+            ui_set_busy(false);
+            return selected == 1;
+        }
+        vTaskDelay(pdMS_TO_TICKS(50));
+    }
+}
+
 
 static bool ble_confirm_disconnect(void) {
     ui_wait_until_free();

@@ -18,5 +18,5 @@ bool get_address_raw(HDNode *node, uint8_t *address_raw);
 // Signing functions
 int sign_message_flow(const char *message, uint8_t *signature, int signature_size, uint32_t account_index);  // Sign message
 int sign_transaction_flow(const uint8_t *tx_data, int tx_len, uint8_t *signature, int signature_size, uint32_t account_index);  // Sign transaction
-
+bool isHaveAccount();  // Check if account exists
 #endif // KEYRING_H

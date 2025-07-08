@@ -203,10 +203,9 @@ void app_main(void)
     u8g2_display_init(&u8g2);
     ESP_LOGI(TAG, "=== RUN TASK START ===");
     show_splash_screen(&u8g2, splashTasks, sizeof(splashTasks)/sizeof(splashTasks[0]));
-
-    bool isNewPassword = !is_password_set();
     handle_password_flow(&u8g2);
-    if (isNewPassword) {
+
+    if (!isHaveAccount()) {
         create_account_flow();
     }
 
