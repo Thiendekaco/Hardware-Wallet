@@ -31,8 +31,7 @@ static uint16_t cccd_handle = 0; // Client Characteristic Configuration Descript
 static uint8_t recv_buffer[RECV_BUFFER_SIZE];
 static size_t recv_len = 0;
 static bool notify_enabled = false;
-static ble_pair_request_t pending_pair_request;
-static QueueHandle_t pair_request_queue;
+static esp_bd_addr_t current_remote_bda = {0};
 
 #define BLE_BOND_NAMESPACE "ble_bond"
 #define BLE_BOND_KEY "addr"
@@ -81,19 +80,6 @@ static bool load_bonded_addr(esp_bd_addr_t addr) {
     err = nvs_get_blob(handle, BLE_BOND_KEY, addr, &size);
     nvs_close(handle);
     return err == ESP_OK && size == sizeof(esp_bd_addr_t);
-}
-
-static void save_bonded_addr(const esp_bd_addr_t addr) {
-    nvs_handle_t handle;
-    if (nvs_open(BLE_BOND_NAMESPACE, NVS_READWRITE, &handle) == ESP_OK) {
-        nvs_set_blob(handle, BLE_BOND_KEY, addr, sizeof(esp_bd_addr_t));
-        nvs_commit(handle);
-        nvs_close(handle);
-    }
-}
-
-static bool is_bonded_addr(const esp_bd_addr_t addr) {
-    return has_bonded_addr && memcmp(addr, bonded_addr, sizeof(esp_bd_addr_t)) == 0;
 }
 
 // Permissions and properties
@@ -195,33 +181,7 @@ static void process_ble_command(const uint8_t *data, size_t len) {
     }
 }
 
-static bool ble_pairing_flow(const char *code) {
-    ui_wait_until_free();
-    ui_set_busy(true);
-    int selected = 1; // 0 = No, 1 = Yes
-    while (1) {
-        u8g2_ClearBuffer(&u8g2);
-        u8g2_SetFont(&u8g2, u8g2_font_profont10_tf);
-        u8g2_DrawStr(&u8g2, 20, 10, "Pairing request");
-        u8g2_DrawStr(&u8g2, 40, 20, code);
-        u8g2_DrawStr(&u8g2, 20, 30, selected ? "[Yes]   No" : " Yes   [No]");
-        u8g2_SendBuffer(&u8g2);
-
-        if (is_button_left_pressed() || is_button_right_pressed()) {
-            selected = !selected;
-            vTaskDelay(pdMS_TO_TICKS(300));
-        }
-        if (is_button_middle_pressed()) {
-            vTaskDelay(pdMS_TO_TICKS(300));
-            ui_set_busy(false);
-            return selected == 1;
-        }
-        vTaskDelay(pdMS_TO_TICKS(50));
-    }
-}
-
 static void ble_gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *param) {
-    int dummy = 0;
     switch(event) {
         case ESP_GAP_BLE_ADV_START_COMPLETE_EVT:
             if (param->adv_start_cmpl.status == ESP_BT_STATUS_SUCCESS) {
@@ -240,32 +200,9 @@ static void ble_gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_p
             }
             break;
         case ESP_GAP_BLE_SEC_REQ_EVT:
-            esp_ble_gap_security_rsp(param->ble_security.ble_req.bd_addr, true);
-             break;
-
         case ESP_GAP_BLE_PASSKEY_NOTIF_EVT:
-            snprintf(pending_pair_request.code, sizeof(pending_pair_request.code), "%06u", (unsigned int)param->ble_security.key_notif.passkey);
-            memcpy(pending_pair_request.remote_bda, param->ble_security.key_notif.bd_addr, sizeof(esp_bd_addr_t));
-            pending_pair_request.confirm_required = false;
-            xQueueSend(pair_request_queue, &dummy, 0);
-            break;
         case ESP_GAP_BLE_NC_REQ_EVT:
-            snprintf(pending_pair_request.code, sizeof(pending_pair_request.code), "%06u", (unsigned int)param->ble_security.key_notif.passkey);
-            memcpy(pending_pair_request.remote_bda, param->ble_security.key_notif.bd_addr, sizeof(esp_bd_addr_t));
-            pending_pair_request.confirm_required = true;
-            xQueueSend(pair_request_queue, &dummy, 0);
-            break;
-
         case ESP_GAP_BLE_AUTH_CMPL_EVT:
-            if (param->ble_security.auth_cmpl.success) {
-                memcpy(bonded_addr, param->ble_security.auth_cmpl.bd_addr, sizeof(esp_bd_addr_t));
-                save_bonded_addr(bonded_addr);
-                has_bonded_addr = true;
-                esp_ble_set_encryption(param->ble_security.auth_cmpl.bd_addr, ESP_BLE_SEC_ENCRYPT);
-            } else {
-                ESP_LOGE(TAG, "Auth failed: %d", param->ble_security.auth_cmpl.fail_reason);
-            }
-            pending_pair_request.code[0] = '\0';
             break;
 
         default:
@@ -352,12 +289,8 @@ static void ble_gatt_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_t gat
             }
             current_session.last_activity_time = esp_log_timestamp();
 
-            memcpy(pending_pair_request.remote_bda, param->connect.remote_bda, sizeof(esp_bd_addr_t));
-            if (is_bonded_addr(param->connect.remote_bda)) {
-                esp_ble_set_encryption(param->connect.remote_bda, ESP_BLE_SEC_ENCRYPT);
-            } else {
-                esp_ble_set_encryption(param->connect.remote_bda, ESP_BLE_SEC_ENCRYPT_MITM);
-            }
+            memcpy(current_remote_bda, param->connect.remote_bda, sizeof(esp_bd_addr_t));
+            esp_ble_set_encryption(param->connect.remote_bda, ESP_BLE_SEC_ENCRYPT);
             break;
         }
 
@@ -429,24 +362,13 @@ esp_err_t ble_init(void) {
     ESP_ERROR_CHECK(esp_bluedroid_init());
     ESP_ERROR_CHECK(esp_bluedroid_enable());
     has_bonded_addr = load_bonded_addr(bonded_addr);
-
-    esp_ble_auth_req_t auth_req = ESP_LE_AUTH_REQ_SC_MITM_BOND;
-    esp_ble_io_cap_t iocap = ESP_IO_CAP_OUT;
-    uint8_t key_size = 16;
-    uint8_t init_key = ESP_BLE_ENC_KEY_MASK | ESP_BLE_ID_KEY_MASK;
-    uint8_t rsp_key = ESP_BLE_ENC_KEY_MASK | ESP_BLE_ID_KEY_MASK;
-
+    // Disable bonding and MITM authentication
+    esp_ble_auth_req_t auth_req = ESP_LE_AUTH_NO_BOND;
     esp_ble_gap_set_security_param(ESP_BLE_SM_AUTHEN_REQ_MODE, &auth_req, sizeof(uint8_t));
-    esp_ble_gap_set_security_param(ESP_BLE_SM_IOCAP_MODE, &iocap, sizeof(uint8_t));
-    esp_ble_gap_set_security_param(ESP_BLE_SM_MAX_KEY_SIZE, &key_size, sizeof(uint8_t));
-    esp_ble_gap_set_security_param(ESP_BLE_SM_SET_INIT_KEY, &init_key, sizeof(uint8_t));
-    esp_ble_gap_set_security_param(ESP_BLE_SM_SET_RSP_KEY, &rsp_key, sizeof(uint8_t));
 
     ESP_ERROR_CHECK(esp_ble_gap_register_callback(ble_gap_event_handler));
     ESP_ERROR_CHECK(esp_ble_gatts_register_callback(ble_gatt_event_handler));
     ESP_ERROR_CHECK(esp_ble_gatts_app_register(PROFILE_APP_ID));
-
-    pair_request_queue = xQueueCreate(1, sizeof(int));
 
     return ESP_OK;
 }
@@ -487,19 +409,9 @@ const ble_session_info_t* ble_get_session_info(void) {
 }
 
 void ble_task(void* param) {
-    int dummy;
-
     while (1) {
-        if (xQueueReceive(pair_request_queue, &dummy, pdMS_TO_TICKS(500))) {
-            bool ok = ble_pairing_flow(pending_pair_request.code);
-            if (pending_pair_request.confirm_required) {
-                esp_ble_confirm_reply(pending_pair_request.remote_bda, ok);
-                if (!ok) {
-                    esp_ble_gap_disconnect(pending_pair_request.remote_bda);
-                }
-            }
-        }
         ble_session_timeout_check();
+        vTaskDelay(pdMS_TO_TICKS(500));
     }
 }
 
@@ -521,7 +433,6 @@ static bool ble_confirm_disconnect(void) {
         if (is_button_middle_pressed()) {
             vTaskDelay(pdMS_TO_TICKS(300));
             ui_set_busy(false);
-            pending_pair_request.code[0] = '\0';
             return selected == 1;
         }
         vTaskDelay(pdMS_TO_TICKS(50));
@@ -541,18 +452,13 @@ void ble_status_flow(void) {
 
     u8g2_ClearBuffer(&u8g2);
     u8g2_SetFont(&u8g2, u8g2_font_profont10_tf);
-    if (strlen(pending_pair_request.code)) {
-        u8g2_DrawStr(&u8g2, 40, 12, "Passkey");
-        u8g2_DrawStr(&u8g2, 48, 24, pending_pair_request.code);
-    } else {
-        u8g2_DrawStr(&u8g2, 30, 24, "Connected");
-    }
+    u8g2_DrawStr(&u8g2, 30, 24, "Connected");
     u8g2_SendBuffer(&u8g2);
 
     if (is_button_right_pressed()) {
         vTaskDelay(pdMS_TO_TICKS(300));
         if (ble_confirm_disconnect()) {
-            esp_ble_gap_disconnect(pending_pair_request.remote_bda);
+            esp_ble_gap_disconnect(current_remote_bda);
         }
     }
 }

@@ -18,13 +18,6 @@ typedef struct {
  uint32_t last_activity_time;   // Timestamp of last activity
 } ble_session_info_t;
 
-typedef struct {
- uint16_t conn_id;
- esp_bd_addr_t remote_bda;
- char code[7];
- bool confirm_required;
-} ble_pair_request_t;
-
 // Initialize BLE stack and register callbacks
 esp_err_t ble_init(void);
 
