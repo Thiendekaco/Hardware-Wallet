@@ -95,6 +95,7 @@ static void process_ble_command(const uint8_t *data, size_t len) {
     uint8_t cmd = data[0];
     switch (cmd) {
         case 0x01: { // Get account information
+            ESP_LOGI(TAG, "Connect account");
             if (len < 5) {
                 ESP_LOGE(TAG, "Get account cmd invalid length");
                 return;
@@ -102,6 +103,8 @@ static void process_ble_command(const uint8_t *data, size_t len) {
             uint32_t index = (data[1] << 24) | (data[2] << 16) | (data[3] << 8) | data[4];
             uint8_t resp[128];
             size_t resp_size = 0;
+
+            ESP_LOGI(TAG, "Get account info for index %lu", (unsigned long)index);
             if (get_account_flow(index, resp, &resp_size)) {
                 ble_send_data(resp, resp_size);
             } else {
@@ -418,5 +421,54 @@ void ble_task(void* param) {
             }
         }
         ble_session_timeout_check();
+    }
+}
+
+static bool ble_confirm_disconnect(void) {
+    ui_wait_until_free();
+    ui_set_busy(true);
+    int selected = 1; // 0 = No, 1 = Yes
+    while (1) {
+        u8g2_ClearBuffer(&u8g2);
+        u8g2_SetFont(&u8g2, u8g2_font_profont10_tf);
+        u8g2_DrawStr(&u8g2, 10, 15, "Disconnect?");
+        u8g2_DrawStr(&u8g2, 20, 30, selected ? "[Yes]   No" : " Yes   [No]");
+        u8g2_SendBuffer(&u8g2);
+
+        if (is_button_left_pressed() || is_button_right_pressed()) {
+            selected = !selected;
+            vTaskDelay(pdMS_TO_TICKS(300));
+        }
+        if (is_button_middle_pressed()) {
+            vTaskDelay(pdMS_TO_TICKS(300));
+            ui_set_busy(false);
+            return selected == 1;
+        }
+        vTaskDelay(pdMS_TO_TICKS(50));
+    }
+}
+
+void ble_status_flow(void) {
+    ui_wait_until_free();
+    if (ble_get_connection_status() == BLE_DISCONNECTED) {
+        u8g2_ClearBuffer(&u8g2);
+        u8g2_SetFont(&u8g2, u8g2_font_profont10_tf);
+        u8g2_DrawStr(&u8g2, 10, 15, "Connect Bluetooth");
+        u8g2_DrawStr(&u8g2, 10, 25, "to get account");
+        u8g2_SendBuffer(&u8g2);
+        return;
+    }
+
+    u8g2_ClearBuffer(&u8g2);
+    u8g2_SetFont(&u8g2, u8g2_font_profont10_tf);
+    u8g2_DrawStr(&u8g2, 28, 12, "Paired code");
+    u8g2_DrawStr(&u8g2, 48, 24, pending_pair_request.code);
+    u8g2_SendBuffer(&u8g2);
+
+    if (is_button_right_pressed()) {
+        vTaskDelay(pdMS_TO_TICKS(300));
+        if (ble_confirm_disconnect()) {
+            esp_ble_gap_disconnect(pending_pair_request.remote_bda);
+        }
     }
 }

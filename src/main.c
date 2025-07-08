@@ -207,9 +207,12 @@ void app_main(void)
 
     bool isNewPassword = !is_password_set();
     handle_password_flow(&u8g2);
-    create_account_flow();
+    if (isNewPassword) {
+        create_account_flow();
+    }
 
     while (1) {
-        vTaskDelay(pdMS_TO_TICKS(1000));
+        ble_status_flow();
+        vTaskDelay(pdMS_TO_TICKS(100));
     }
 }

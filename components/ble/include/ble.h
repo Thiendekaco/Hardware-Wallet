@@ -48,6 +48,10 @@ void ble_task(void* param);
 
 // Accessors for connection state and session info (optional)
 uint8_t ble_get_connection_status(void);
+
 const ble_session_info_t* ble_get_session_info(void);
+
+// Display connection status and handle disconnect option
+void ble_status_flow(void);
 
 #endif // BLE_H

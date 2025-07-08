@@ -13,6 +13,8 @@ The hardware design is the key component of this project, including the followin
   * Generation and storage of private keys in a secure, isolated environment.
   * Bluetooth Low Energy (BLE) communication to ensure secure, wireless connections.
   * Secure transaction signing within the hardware, preventing exposure of private keys.
+  * Advertisement is started only after the BLE service is fully registered, ensuring
+    browsers can reliably discover available services.
 
 # Development Tools
 
