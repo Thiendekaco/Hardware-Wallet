@@ -199,6 +199,12 @@ void u8g2_display_init(u8g2_t *pu8g2) {
 
 void app_main(void)
 {
+    // esp_err_t err = nvs_flash_erase();
+    // if (err == ESP_OK) {
+    //     printf("NVS đã được xóa sạch!\n");
+    // } else {
+    //     printf("Xóa NVS thất bại: %s\n", esp_err_to_name(err));
+    // }
     ESP_ERROR_CHECK(i2c_master_init());
 
     u8g2_display_init(&u8g2);

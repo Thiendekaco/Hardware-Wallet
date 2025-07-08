@@ -16,8 +16,7 @@ void init_button_listener() {
         .intr_type = GPIO_INTR_DISABLE
     };
     gpio_config(&io_conf);
-    uint64_t mask = (1ULL << BUTTON_LEFT) | (1ULL << BUTTON_RIGHT) | (1ULL << BUTTON_MIDDLE);
-    auto_sleep_init(mask);
+    auto_sleep_init(1ULL << BUTTON_RIGHT);
 }
 
 bool is_button_left_pressed() {

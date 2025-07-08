@@ -225,12 +225,12 @@ void create_account(const char *mnemonic) {
     // Save HDNode and public key to NVS
     save_hdnode_to_nvs(&node);
 
-    // Lấy Ethereum address
-    uint8_t pubkey_hash[32];
-    keccak_256(g_public_key + 1, 64, pubkey_hash);   // Skip 0x04 prefix
+    // Derive Ethereum address from the node directly
+    uint8_t pubkey_hash[20];
+    hdnode_get_ethereum_pubkeyhash(&node, pubkey_hash);// Skip 0x04 prefix
     sprintf(g_address, "0x");
-    for (int i = 12; i < 32; i++) { // Last 20 bytes
-        sprintf(g_address + 2 + (i - 12) * 2, "%02x", pubkey_hash[i]);
+    for (int i = 0; i < 20; i++) {
+        sprintf(g_address + 2 + i * 2, "%02x", pubkey_hash[i]);
     }
 
     ESP_LOGI(TAG, "Public key: %s", g_address);
@@ -271,12 +271,15 @@ bool get_account(uint32_t account_index, HDNode *node) {
 
 // Get address from the HDNode
 bool get_address(HDNode *node, char *address, int address_size) {
-    uint8_t pubkey_hash[32];
-    keccak_256(g_public_key + 1, 64, pubkey_hash); // Skip 0x04 prefix
-    snprintf(address, address_size, "0x");
+    if (!node || !address || address_size < 43) {
+        return false;
+    }
 
-    for (int i = 12; i < 32; i++) { // Last 20 bytes
-        snprintf(address + 2 + (i - 12) * 2, address_size - (i - 12) * 2, "%02x", pubkey_hash[i]);
+    uint8_t pubkey_hash[20];
+    hdnode_get_ethereum_pubkeyhash(node, pubkey_hash);
+    snprintf(address, address_size, "0x");
+    for (int i = 0; i < 20; i++) {
+        snprintf(address + 2 + i * 2, address_size - 2 - i * 2, "%02x", pubkey_hash[i]);
     }
 
     return true;
