@@ -23,6 +23,7 @@ esp_err_t ble_init(void);
 
 // Start/stop advertising
 esp_err_t ble_start_advertising(void);
+
 esp_err_t ble_stop_advertising(void);
 
 // Sending data via BLE indication (notification)
@@ -41,5 +42,8 @@ const ble_session_info_t* ble_get_session_info(void);
 
 // Display connection status and handle disconnect option
 void ble_status_flow(void);
+
+// Disconnect current BLE connection if any
+esp_err_t ble_disconnect(void);
 
 #endif // BLE_H

@@ -488,3 +488,10 @@ void ble_status_flow(void) {
         }
     }
 }
+
+esp_err_t ble_disconnect(void) {
+    if (is_connected != BLE_CONNECTED) {
+        return ESP_FAIL;
+    }
+    return esp_ble_gap_disconnect(current_remote_bda);
+}

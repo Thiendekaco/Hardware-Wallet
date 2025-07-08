@@ -1,4 +1,5 @@
 #include "button_listener.h"
+#include "auto_sleep.h"
 
 // Khai báo chân GPIO theo ESP-IDF
 const gpio_num_t BUTTON_LEFT = GPIO_NUM_17;
@@ -15,17 +16,30 @@ void init_button_listener() {
         .intr_type = GPIO_INTR_DISABLE
     };
     gpio_config(&io_conf);
+    uint64_t mask = (1ULL << BUTTON_LEFT) | (1ULL << BUTTON_RIGHT) | (1ULL << BUTTON_MIDDLE);
+    auto_sleep_init(mask);
 }
 
 bool is_button_left_pressed() {
-    // Chân kéo lên (HIGH) khi chưa nhấn, kéo xuống (LOW) khi nhấn
-    return gpio_get_level(BUTTON_LEFT) == 0;
+    bool pressed = gpio_get_level(BUTTON_LEFT) == 0;
+    if (pressed) {
+        auto_sleep_record_activity();
+    }
+    return pressed;
 }
 
 bool is_button_right_pressed() {
-    return gpio_get_level(BUTTON_RIGHT) == 0;
+    bool pressed = gpio_get_level(BUTTON_RIGHT) == 0;
+    if (pressed) {
+        auto_sleep_record_activity();
+    }
+    return pressed;
 }
 
 bool is_button_middle_pressed() {
-    return gpio_get_level(BUTTON_MIDDLE) == 0;
+    bool pressed = gpio_get_level(BUTTON_MIDDLE) == 0;
+    if (pressed) {
+        auto_sleep_record_activity();
+    }
+    return pressed;
 }

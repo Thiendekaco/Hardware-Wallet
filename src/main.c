@@ -15,6 +15,7 @@
 #include "password.h"
 #include "keyring.h"
 #include "splash_screen.h"
+#include "auto_sleep.h"
 
 #define I2C_MASTER_SCL_IO           GPIO_NUM_22      // GPIO number for I2C master clock
 #define I2C_MASTER_SDA_IO           GPIO_NUM_21      // GPIO number for I2C master data
@@ -211,6 +212,7 @@ void app_main(void)
 
     while (1) {
         ble_status_flow();
+        auto_sleep_check();
         vTaskDelay(pdMS_TO_TICKS(100));
     }
 }
