@@ -252,6 +252,7 @@ static void ble_gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_p
             } else {
                 ESP_LOGE(TAG, "Auth failed: %d", param->ble_security.auth_cmpl.fail_reason);
             }
+            pending_pair_request.code[0] = '\0';
             break;
 
         default:
@@ -508,6 +509,7 @@ static bool ble_confirm_disconnect(void) {
         if (is_button_middle_pressed()) {
             vTaskDelay(pdMS_TO_TICKS(300));
             ui_set_busy(false);
+            pending_pair_request.code[0] = '\0';
             return selected == 1;
         }
         vTaskDelay(pdMS_TO_TICKS(50));
@@ -527,8 +529,8 @@ void ble_status_flow(void) {
 
     u8g2_ClearBuffer(&u8g2);
     u8g2_SetFont(&u8g2, u8g2_font_profont10_tf);
-    u8g2_DrawStr(&u8g2, 40, 12, "Passkey");
     if (strlen(pending_pair_request.code)) {
+        u8g2_DrawStr(&u8g2, 40, 12, "Passkey");
         u8g2_DrawStr(&u8g2, 48, 24, pending_pair_request.code);
     } else {
         u8g2_DrawStr(&u8g2, 30, 24, "Connected");

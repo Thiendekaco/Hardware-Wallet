@@ -190,6 +190,13 @@ bool get_address(HDNode *node, char *address, int address_size) {
     return true;
 }
 
+// Get raw 20 byte Ethereum address
+bool get_address_raw(HDNode *node, uint8_t *address_raw) {
+    if (!address_raw) return false;
+    hdnode_get_ethereum_pubkeyhash(node, address_raw);
+    return true;
+}
+
 // Get public key from the HDNode
 bool get_public_key(HDNode *node, uint8_t *public_key, int key_size) {
     if (key_size < 65) return false;
@@ -266,8 +273,8 @@ bool get_account_flow(uint32_t account_index, uint8_t *response, size_t *respons
     }
 
     // Get address and public key from the HDNode
-    char address[43];
-    if (!get_address(&node, address, sizeof(address))) {
+    uint8_t address_raw[20];
+    if (!get_address_raw(&node, address_raw)) {
         show_message("Failed to get address!");
         return false;  // Failed to get address
     }
@@ -284,8 +291,8 @@ bool get_account_flow(uint32_t account_index, uint8_t *response, size_t *respons
     // Start constructing the response
     size_t total_size = 1 +  // Public key length
                         1 +  // Address length
-                        65 + // Public key length
-                        1 +   // Address length
+                        65 + // Public key bytes
+                        20 + // Address bytes
                         32;  // Chain code length
 
 
@@ -299,9 +306,9 @@ bool get_account_flow(uint32_t account_index, uint8_t *response, size_t *respons
     response[1] = 20;  // Length of the address
 
     // Copy the public key, address, and chain code
-    memcpy(response + 2, public_key, 65);  // Public key
-    memcpy(response + 2 + 65, address, 20);  // Address
-    memcpy(response + 2 + 65 + 20, chainCode, 32);  // Chain code
+    memcpy(response + 2, public_key, 65);         // Public key
+    memcpy(response + 2 + 65, address_raw, 20);   // Address
+    memcpy(response + 2 + 65 + 20, chainCode, 32); // Chain code
 
     *response_size = total_size;
 
