@@ -167,6 +167,7 @@ static void process_ble_command(const uint8_t *data, size_t len) {
             size_t tx_len = len - 5;
             uint8_t sig[64];
             bool ok = sign_transaction_flow(tx, tx_len, sig, sizeof(sig), index);
+            ESP_LOGI(TAG, "Transaction signed successfully %d, status %d", sizeof(sig), ok);
             if (ok) {
                 ble_send_data(sig, sizeof(sig));
             } else {

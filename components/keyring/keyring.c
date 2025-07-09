@@ -155,7 +155,7 @@ static bool confirm_sign_transaction(const eth_tx_t *tx) {
             u8g2_DrawStr(&u8g2, 100, 40, page_str);
         } else {
             u8g2_DrawStr(&u8g2, 0, 8, "Sign Tx?");
-            u8g2_DrawStr(&u8g2, 70, 40, selected ? "[Yes] No" : "Yes [No]");
+            u8g2_DrawStr(&u8g2, 70, 20, selected ? "[Yes] No" : "Yes [No]");
         }
 
         u8g2_SendBuffer(&u8g2);
@@ -468,12 +468,15 @@ int sign_transaction(uint32_t accountIndex, const uint8_t *tx_data, int tx_len, 
     // Hash the transaction data using Keccak-256 (Ethereum specific)
     uint8_t hash[32];
     keccak_256(tx_data, tx_len, hash);  // Ethereum uses Keccak-256 hash for transactions
+    uint8_t v;
     ESP_LOGI(TAG, "Signing transaction with account %lu", (unsigned long)accountIndex);
 
     // Sign the hashed transaction using the derived private key
-    int ok = ecdsa_sign(&secp256k1, HASHER_SHA3, node.private_key, hash, sizeof(hash), signature, NULL, NULL);
+    int ok = ecdsa_sign(&secp256k1, HASHER_SHA3, node.private_key, tx_data, tx_len, signature, &v, NULL);
 
     ESP_LOGI(TAG, "Transaction signed successfully %d", ok);
+
+    signature[64] = v;  // Set the recovery id (v) in the signature
 
     // Clear the hash for security
     memzero(hash, sizeof(hash));
@@ -570,15 +573,17 @@ bool sign_transaction_flow(const uint8_t *tx_data, int tx_len, uint8_t *signatur
     if(!eth_tx_decode(tx_data, tx_len, &tx)) {
         ESP_LOGI(TAG, "Tx decode failed!");
         show_message("Tx decode failed!");
-        return 0;
+        return false;
     }
 
     if(!confirm_sign_transaction(&tx)) {
-        return 0;
+        ESP_LOGI(TAG, "reject signing transaction");
+        return false;
     }
 
-    // Now derive the account based on account_index and sign the transaction
-    return sign_transaction(account_index, tx_data, tx_len, signature, signature_size) != 0;
+    // Now derive the account based on account_index and sign the
+    int txok = sign_transaction(account_index, tx_data, tx_len, signature, signature_size);
+    return  txok == 0;
 }
 
 
