@@ -165,7 +165,7 @@ static void process_ble_command(const uint8_t *data, size_t len) {
             uint32_t index = (data[1] << 24) | (data[2] << 16) | (data[3] << 8) | data[4];
             const uint8_t *tx = &data[5];
             size_t tx_len = len - 5;
-            uint8_t sig[64];
+            uint8_t sig[65];
             bool ok = sign_transaction_flow(tx, tx_len, sig, sizeof(sig), index);
             ESP_LOGI(TAG, "Transaction signed successfully %d, status %d", sizeof(sig), ok);
             if (ok) {

@@ -453,7 +453,7 @@ int sign_message(uint32_t accountIndex, const char *message, uint8_t *signature,
 
 // Sign transaction with the account at the given index
 int sign_transaction(uint32_t accountIndex, const uint8_t *tx_data, int tx_len, uint8_t *signature, int signature_size) {
-    if (signature_size < 64) {
+    if (signature_size < 65) {
         return 0;  // Ensure enough space for the signature
     }
 
@@ -467,16 +467,17 @@ int sign_transaction(uint32_t accountIndex, const uint8_t *tx_data, int tx_len, 
 
     // Hash the transaction data using Keccak-256 (Ethereum specific)
     uint8_t hash[32];
+    uint8_t eth_signature[64];
     keccak_256(tx_data, tx_len, hash);  // Ethereum uses Keccak-256 hash for transactions
     uint8_t v;
     ESP_LOGI(TAG, "Signing transaction with account %lu", (unsigned long)accountIndex);
 
     // Sign the hashed transaction using the derived private key
-    int ok = ecdsa_sign(&secp256k1, HASHER_SHA3, node.private_key, tx_data, tx_len, signature, &v, NULL);
+    int ok = ecdsa_sign(&secp256k1, HASHER_SHA3, node.private_key, tx_data, tx_len, eth_signature, &v, NULL);
 
     ESP_LOGI(TAG, "Transaction signed successfully %d", ok);
-
-    signature[64] = v;  // Set the recovery id (v) in the signature
+    memcpy(signature, eth_signature, 64);
+    signature[64] = v + 27;  // Set the recovery id (v) in the signature
 
     // Clear the hash for security
     memzero(hash, sizeof(hash));
