@@ -1,4 +1,5 @@
 #include "keyring.h"
+#include "eth_tx.h"
 
 #include <esp_log.h>
 
@@ -60,6 +61,58 @@ static bool confirm_send_address(const char *address) {
         u8g2_DrawStr(&u8g2, 0, 16, line1);
         u8g2_DrawStr(&u8g2, 0, 24, line2);
         u8g2_DrawStr(&u8g2, 20, 32, selected ? "[Yes]   No" : " Yes   [No]");
+        u8g2_SendBuffer(&u8g2);
+
+        if (is_button_left_pressed() || is_button_right_pressed()) {
+            selected = !selected;
+            vTaskDelay(pdMS_TO_TICKS(300));
+        }
+        if (is_button_middle_pressed()) {
+            vTaskDelay(pdMS_TO_TICKS(300));
+            ui_set_busy(false);
+            return selected == 1;
+        }
+        vTaskDelay(pdMS_TO_TICKS(50));
+    }
+}
+
+static void u64_to_str(uint64_t val, char *out, size_t out_len) {
+    char buf[32];
+    int i = 0;
+    if(val == 0) {
+        buf[i++] = '0';
+    } else {
+        while(val > 0 && i < (int)sizeof(buf)) {
+            buf[i++] = '0' + (val % 10);
+            val /= 10;
+        }
+    }
+    int pos = 0;
+    while(i > 0 && pos < (int)out_len - 1) {
+        out[pos++] = buf[--i];
+    }
+    out[pos] = '\0';
+}
+
+static bool confirm_sign_transaction(const eth_tx_t *tx) {
+    ui_wait_until_free();
+    ui_set_busy(true);
+    int selected = 1;
+    char addr[43];
+    sprintf(addr, "0x");
+    for(int i=0;i<20;i++) sprintf(addr+2+i*2, "%02x", tx->to[i]);
+    char value_str[32];
+    char fee_str[32];
+    u64_to_str(tx->value, value_str, sizeof(value_str));
+    u64_to_str(tx->max_fee_per_gas, fee_str, sizeof(fee_str));
+    while(1) {
+        u8g2_ClearBuffer(&u8g2);
+        u8g2_SetFont(&u8g2, u8g2_font_profont10_tf);
+        u8g2_DrawStr(&u8g2, 0, 8, "Sign Tx?");
+        u8g2_DrawStr(&u8g2, 0, 16, addr);
+        u8g2_DrawStr(&u8g2, 0, 24, value_str);
+        u8g2_DrawStr(&u8g2, 0, 32, fee_str);
+        u8g2_DrawStr(&u8g2, 70, 40, selected ? "[Yes] No" : "Yes [No]");
         u8g2_SendBuffer(&u8g2);
 
         if (is_button_left_pressed() || is_button_right_pressed()) {
@@ -203,16 +256,21 @@ void create_account(const char *mnemonic) {
 
     show_message("Waiting for seed...");
     // Tạo HDNode từ seed
-    HDNode node;
-    if (!hdnode_from_seed(seed, 64, SECP256K1_NAME, &node)) {
+    HDNode master_node;
+    if (!hdnode_from_seed(seed, 64, SECP256K1_NAME, &master_node)) {
         show_message("Master key failed!");
         vTaskDelay(pdMS_TO_TICKS(400));
         return;
     }
 
+    // Save master node to NVS
+    save_hdnode_to_nvs(&master_node);
+
+    // Derive first Ethereum account for display
     show_message("Waiting for path...");
-    // Derive the account using the path
-    if (!hdnode_private_ckd_path(&node, ETH_DERIVATION_PATH, sizeof(ETH_DERIVATION_PATH) / sizeof(ETH_DERIVATION_PATH[0]))) {
+    HDNode derived_node = master_node;
+    if (!hdnode_private_ckd_path(&derived_node, ETH_DERIVATION_PATH,
+                                 sizeof(ETH_DERIVATION_PATH) / sizeof(ETH_DERIVATION_PATH[0]))) {
         show_message("Path derivation failed!");
         vTaskDelay(pdMS_TO_TICKS(400));
         return;
@@ -220,14 +278,14 @@ void create_account(const char *mnemonic) {
 
     show_message("Waiting for public key...");
     // Compute uncompressed public key and store globally
-    ecdsa_get_public_key65(node.curve->params, node.private_key, g_public_key);
+    ecdsa_get_public_key65(derived_node.curve->params, derived_node.private_key, g_public_key);
 
     // Save HDNode and public key to NVS
-    save_hdnode_to_nvs(&node);
+    save_hdnode_to_nvs(&derived_node);
 
     // Derive Ethereum address from the node directly
     uint8_t pubkey_hash[20];
-    hdnode_get_ethereum_pubkeyhash(&node, pubkey_hash);// Skip 0x04 prefix
+    hdnode_get_ethereum_pubkeyhash(&derived_node, pubkey_hash);// Skip 0x04 prefix
     sprintf(g_address, "0x");
     for (int i = 0; i < 20; i++) {
         sprintf(g_address + 2 + i * 2, "%02x", pubkey_hash[i]);
@@ -247,6 +305,10 @@ bool get_account(uint32_t account_index, HDNode *node) {
     }
 
     ESP_LOGI(TAG, "Loading account %lu", (unsigned long)account_index);
+
+    if (account_index == 0) {
+        return true;
+    }
 
     // Derive the account based on the index
     uint32_t derivation_path[] = {
@@ -338,6 +400,7 @@ int sign_transaction(uint32_t accountIndex, const uint8_t *tx_data, int tx_len, 
     // Derive the account HDNode for the given accountIndex
     HDNode node;
     if (!get_account(accountIndex, &node)) {
+        ESP_LOGI(TAG, "Failed to get account for signing transaction!");
         show_message("Failed to get account!");
         return 0;
     }
@@ -345,9 +408,12 @@ int sign_transaction(uint32_t accountIndex, const uint8_t *tx_data, int tx_len, 
     // Hash the transaction data using Keccak-256 (Ethereum specific)
     uint8_t hash[32];
     keccak_256(tx_data, tx_len, hash);  // Ethereum uses Keccak-256 hash for transactions
+    ESP_LOGI(TAG, "Signing transaction with account %lu", (unsigned long)accountIndex);
 
     // Sign the hashed transaction using the derived private key
     int ok = ecdsa_sign(&secp256k1, HASHER_SHA3, node.private_key, hash, sizeof(hash), signature, NULL, NULL);
+
+    ESP_LOGI(TAG, "Transaction signed successfully");
 
     // Clear the hash for security
     memzero(hash, sizeof(hash));
@@ -440,9 +506,15 @@ int sign_message_flow(const char *message, uint8_t *signature, int signature_siz
 
 
 int sign_transaction_flow(const uint8_t *tx_data, int tx_len, uint8_t *signature, int signature_size, uint32_t account_index) {
-    // Verify password before signing
-    if (!handle_password_flow()) {
-        return 0; // Password verification failed
+    eth_tx_t tx;
+    if(!eth_tx_decode(tx_data, tx_len, &tx)) {
+        ESP_LOGI(TAG, "Tx decode failed!");
+        show_message("Tx decode failed!");
+        return 0;
+    }
+
+    if(!confirm_sign_transaction(&tx)) {
+        return 0;
     }
 
     // Now derive the account based on account_index and sign the transaction
