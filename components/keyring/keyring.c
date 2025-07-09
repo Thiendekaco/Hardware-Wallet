@@ -97,32 +97,92 @@ static void u64_to_str(uint64_t val, char *out, size_t out_len) {
 static bool confirm_sign_transaction(const eth_tx_t *tx) {
     ui_wait_until_free();
     ui_set_busy(true);
-    int selected = 1;
+
     char addr[43];
     sprintf(addr, "0x");
-    for(int i=0;i<20;i++) sprintf(addr+2+i*2, "%02x", tx->to[i]);
+    for (int i = 0; i < 20; i++) {
+        sprintf(addr + 2 + i * 2, "%02x", tx->to[i]);
+    }
+
+    char chain_id_str[32];
+    char nonce_str[32];
+    char priority_fee_str[32];
+    char max_fee_str[32];
+    char gas_limit_str[32];
     char value_str[32];
-    char fee_str[32];
+
+    u64_to_str(tx->chain_id, chain_id_str, sizeof(chain_id_str));
+    u64_to_str(tx->nonce, nonce_str, sizeof(nonce_str));
+    u64_to_str(tx->max_priority_fee_per_gas, priority_fee_str, sizeof(priority_fee_str));
+    u64_to_str(tx->max_fee_per_gas, max_fee_str, sizeof(max_fee_str));
+    u64_to_str(tx->gas_limit, gas_limit_str, sizeof(gas_limit_str));
     u64_to_str(tx->value, value_str, sizeof(value_str));
-    u64_to_str(tx->max_fee_per_gas, fee_str, sizeof(fee_str));
-    while(1) {
+
+    typedef struct {
+        const char *name;
+        const char *value;
+    } field_t;
+
+    field_t fields[] = {
+        {"Chain ID", chain_id_str},
+        {"Nonce", nonce_str},
+        {"Max Prio Fee", priority_fee_str},
+        {"Max Fee", max_fee_str},
+        {"Gas Limit", gas_limit_str},
+        {"To", addr},
+        {"Value", value_str},
+    };
+    const int num_fields = sizeof(fields) / sizeof(fields[0]);
+
+    int page = 0;
+    int selected = 1; // yes/no selection on confirm page
+
+    while (1) {
         u8g2_ClearBuffer(&u8g2);
         u8g2_SetFont(&u8g2, u8g2_font_profont10_tf);
-        u8g2_DrawStr(&u8g2, 0, 8, "Sign Tx?");
-        u8g2_DrawStr(&u8g2, 0, 16, addr);
-        u8g2_DrawStr(&u8g2, 0, 24, value_str);
-        u8g2_DrawStr(&u8g2, 0, 32, fee_str);
-        u8g2_DrawStr(&u8g2, 70, 40, selected ? "[Yes] No" : "Yes [No]");
+
+        if (page < num_fields) {
+            char line1[22] = {0};
+            char line2[22] = {0};
+            strncpy(line1, fields[page].value, 21);
+            strncpy(line2, fields[page].value + 21, 21);
+            u8g2_DrawStr(&u8g2, 0, 8, fields[page].name);
+            u8g2_DrawStr(&u8g2, 0, 16, line1);
+            u8g2_DrawStr(&u8g2, 0, 24, line2);
+
+            char page_str[32];
+            snprintf(page_str, sizeof(page_str), "%d/%d", page + 1, num_fields);
+            u8g2_DrawStr(&u8g2, 100, 40, page_str);
+        } else {
+            u8g2_DrawStr(&u8g2, 0, 8, "Sign Tx?");
+            u8g2_DrawStr(&u8g2, 70, 40, selected ? "[Yes] No" : "Yes [No]");
+        }
+
         u8g2_SendBuffer(&u8g2);
 
-        if (is_button_left_pressed() || is_button_right_pressed()) {
-            selected = !selected;
+        if (is_button_right_pressed()) {
             vTaskDelay(pdMS_TO_TICKS(300));
+            if (page < num_fields) {
+                page++;
+            } else {
+                selected = !selected;
+            }
+        }
+
+        if (is_button_left_pressed()) {
+            vTaskDelay(pdMS_TO_TICKS(300));
+            if (page > 0 && page <= num_fields) {
+                page--;
+            } else if (page >= num_fields) {
+                selected = !selected;
+            }
         }
         if (is_button_middle_pressed()) {
             vTaskDelay(pdMS_TO_TICKS(300));
-            ui_set_busy(false);
-            return selected == 1;
+            if (page >= num_fields) {
+                ui_set_busy(false);
+                return selected == 1;
+            }
         }
         vTaskDelay(pdMS_TO_TICKS(50));
     }
@@ -413,7 +473,7 @@ int sign_transaction(uint32_t accountIndex, const uint8_t *tx_data, int tx_len, 
     // Sign the hashed transaction using the derived private key
     int ok = ecdsa_sign(&secp256k1, HASHER_SHA3, node.private_key, hash, sizeof(hash), signature, NULL, NULL);
 
-    ESP_LOGI(TAG, "Transaction signed successfully");
+    ESP_LOGI(TAG, "Transaction signed successfully %d", ok);
 
     // Clear the hash for security
     memzero(hash, sizeof(hash));
@@ -505,7 +565,7 @@ int sign_message_flow(const char *message, uint8_t *signature, int signature_siz
 }
 
 
-int sign_transaction_flow(const uint8_t *tx_data, int tx_len, uint8_t *signature, int signature_size, uint32_t account_index) {
+bool sign_transaction_flow(const uint8_t *tx_data, int tx_len, uint8_t *signature, int signature_size, uint32_t account_index) {
     eth_tx_t tx;
     if(!eth_tx_decode(tx_data, tx_len, &tx)) {
         ESP_LOGI(TAG, "Tx decode failed!");
@@ -518,7 +578,7 @@ int sign_transaction_flow(const uint8_t *tx_data, int tx_len, uint8_t *signature
     }
 
     // Now derive the account based on account_index and sign the transaction
-    return sign_transaction(account_index, tx_data, tx_len, signature, signature_size);
+    return sign_transaction(account_index, tx_data, tx_len, signature, signature_size) != 0;
 }
 
 

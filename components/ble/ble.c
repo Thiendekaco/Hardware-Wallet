@@ -166,7 +166,7 @@ static void process_ble_command(const uint8_t *data, size_t len) {
             const uint8_t *tx = &data[5];
             size_t tx_len = len - 5;
             uint8_t sig[64];
-            int ok = sign_transaction_flow(tx, tx_len, sig, sizeof(sig), index);
+            bool ok = sign_transaction_flow(tx, tx_len, sig, sizeof(sig), index);
             if (ok) {
                 ble_send_data(sig, sizeof(sig));
             } else {
