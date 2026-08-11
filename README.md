@@ -31,5 +31,3 @@ The result is a stable prototype hardware wallet capable of:
 * Supporting physical user authentication.
 
 This prototype demonstrates strong potential for practical applications in the Blockchain/Web3 ecosystem and offers a solid foundation for future expansions and integrations.
-
--- END --
